@@ -222,15 +222,17 @@ export default function AnalysisUpload() {
           </div>
         )}
 
-        {status === 'uploading' && progress > 0 && (
+        {status === 'uploading' && (
           <div className="progress-container">
             <div className="progress-bar-wrapper">
               <div
                 className="progress-bar"
-                style={{ width: `${progress}%` }}
+                style={{ width: `${Math.max(progress, 1)}%` }}
               />
             </div>
-            <p className="progress-text">Uploading... {Math.round(progress)}%</p>
+            <p className="progress-text">
+              {progress > 0 ? `Uploading... ${Math.round(progress)}%` : 'Preparing upload...'}
+            </p>
           </div>
         )}
 
