@@ -354,3 +354,53 @@
   font-size: 0.9rem;
 }
 
+/* Current Step Progress */
+.current-step-progress {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #e8f4f8;
+  border-radius: 6px;
+  border-left: 4px solid #3498db;
+}
+
+.step-progress-bar-wrapper {
+  width: 100%;
+  height: 8px;
+  background-color: #ecf0f1;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.step-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2980b9);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.step-progress-message {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+/* Inline Progress for Each Step */
+.step-inline-progress {
+  margin-top: 0.5rem;
+  width: 100%;
+  height: 4px;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.step-inline-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2980b9);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
