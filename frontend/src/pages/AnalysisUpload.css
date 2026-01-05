@@ -210,8 +210,14 @@
   margin-top: 1.5rem;
   padding: 1.5rem;
   background-color: #f8f9fa;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid #dee2e6;
+}
+
+.processing-details h3 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: #2c3e50;
 }
 
 .processing-steps {
@@ -224,9 +230,9 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.75rem;
+  padding: 1rem;
   background-color: white;
-  border-radius: 4px;
+  border-radius: 6px;
   border-left: 4px solid #dee2e6;
   transition: all 0.3s ease;
 }
@@ -234,12 +240,76 @@
 .step.active {
   border-left-color: #3498db;
   background-color: #e8f4f8;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.2);
+}
+
+.step.completed {
+  border-left-color: #27ae60;
+  background-color: #d5f4e6;
 }
 
 .step-number {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
+  background-color: #ecf0f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #7f8c8d;
+  flex-shrink: 0;
+}
+
+.step.active .step-number {
+  background-color: #3498db;
+  color: white;
+}
+
+.step.completed .step-number {
+  background-color: #27ae60;
+  color: white;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-title {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+}
+
+.step-description {
+  font-size: 0.875rem;
+  color: #7f8c8d;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dashboard-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.dashboard-buttons .btn {
+  flex: 1;
+  min-width: 150px;
+}
   background-color: #ecf0f1;
   color: #7f8c8d;
   display: flex;

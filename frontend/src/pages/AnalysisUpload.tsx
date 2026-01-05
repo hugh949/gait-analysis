@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Loader2, CheckCircle, XCircle, UploadCloud, PlayCircle } from 'lucide-react'
 import './AnalysisUpload.css'
 
 const getApiUrl = () => {
@@ -11,12 +12,17 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl()
 
+type UploadStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'failed'
+
+type ProcessingStep = 'pose_estimation' | '3d_lifting' | 'metrics_calculation' | 'report_generation'
+
 export default function AnalysisUpload() {
   const [file, setFile] = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
+  const [status, setStatus] = useState<UploadStatus>('idle')
   const [analysisId, setAnalysisId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
+  const [currentStep, setCurrentStep] = useState<ProcessingStep | null>(null)
   const navigate = useNavigate()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,7 +38,7 @@ export default function AnalysisUpload() {
       return
     }
 
-    setUploading(true)
+    setStatus('uploading')
     setError(null)
     setProgress(0)
 
@@ -71,16 +77,60 @@ export default function AnalysisUpload() {
       const id = await uploadPromise
       setAnalysisId(id)
       setProgress(100)
+      setStatus('processing')
+      setCurrentStep('pose_estimation')
 
-      // Navigate to medical dashboard with analysis ID
-      setTimeout(() => {
-        navigate(`/medical?analysisId=${id}`)
-      }, 2000)
+      // Poll for analysis status
+      pollAnalysisStatus(id)
     } catch (err: any) {
       setError(err.message || 'Upload failed. Please try again.')
-      setUploading(false)
+      setStatus('failed')
       setProgress(0)
     }
+  }
+
+  const pollAnalysisStatus = async (id: string) => {
+    const steps: ProcessingStep[] = ['pose_estimation', '3d_lifting', 'metrics_calculation', 'report_generation']
+    let stepIndex = 0
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch analysis status: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+        const analysisStatus = data.status
+
+        // Update current step (simulate progression)
+        if (stepIndex < steps.length - 1) {
+          setCurrentStep(steps[stepIndex])
+          stepIndex++
+        } else {
+          setCurrentStep(steps[steps.length - 1])
+        }
+
+        if (analysisStatus === 'completed') {
+          setStatus('completed')
+          setCurrentStep('report_generation')
+        } else if (analysisStatus === 'failed') {
+          setStatus('failed')
+          setError(data.error || 'Analysis failed')
+        } else if (analysisStatus === 'processing') {
+          // Continue polling
+          setTimeout(poll, 5000) // Poll every 5 seconds
+        }
+      } catch (err: any) {
+        console.error('Polling error:', err)
+        // Continue polling on error (analysis might still be processing)
+        setTimeout(poll, 5000)
+      }
+    }
+
+    // Start polling
+    poll()
   }
 
   return (
@@ -113,7 +163,7 @@ export default function AnalysisUpload() {
           </div>
         )}
 
-        {uploading && (
+        {status === 'uploading' && progress > 0 && (
           <div className="progress-container">
             <div className="progress-bar-wrapper">
               <div
@@ -125,21 +175,71 @@ export default function AnalysisUpload() {
           </div>
         )}
 
-        {analysisId && (
-          <div className="success">
-            <p>✅ Upload successful!</p>
-            <p>Analysis ID: <strong>{analysisId}</strong></p>
-            <p>Redirecting to dashboard...</p>
+        {status === 'processing' && (
+          <div className="processing-details">
+            <h3>Processing Video Analysis</h3>
+            <div className="processing-steps">
+              <div className={`step ${currentStep === 'pose_estimation' ? 'active' : currentStep && ['3d_lifting', 'metrics_calculation', 'report_generation'].includes(currentStep) ? 'completed' : ''}`}>
+                <div className="step-number">{currentStep && ['3d_lifting', 'metrics_calculation', 'report_generation'].includes(currentStep) ? '✓' : currentStep === 'pose_estimation' ? <Loader2 className="spinner" /> : '1'}</div>
+                <div className="step-content">
+                  <div className="step-title">Pose Estimation</div>
+                  <div className="step-description">Extracting 2D keypoints from video</div>
+                </div>
+              </div>
+              <div className={`step ${currentStep === '3d_lifting' ? 'active' : currentStep && ['metrics_calculation', 'report_generation'].includes(currentStep) ? 'completed' : ''}`}>
+                <div className="step-number">{currentStep && ['metrics_calculation', 'report_generation'].includes(currentStep) ? '✓' : currentStep === '3d_lifting' ? <Loader2 className="spinner" /> : '2'}</div>
+                <div className="step-content">
+                  <div className="step-title">3D Lifting</div>
+                  <div className="step-description">Converting to 3D pose</div>
+                </div>
+              </div>
+              <div className={`step ${currentStep === 'metrics_calculation' ? 'active' : currentStep === 'report_generation' ? 'completed' : ''}`}>
+                <div className="step-number">{currentStep === 'report_generation' ? '✓' : currentStep === 'metrics_calculation' ? <Loader2 className="spinner" /> : '3'}</div>
+                <div className="step-content">
+                  <div className="step-title">Metrics Calculation</div>
+                  <div className="step-description">Computing gait metrics</div>
+                </div>
+              </div>
+              <div className={`step ${currentStep === 'report_generation' ? 'active' : status === 'completed' ? 'completed' : ''}`}>
+                <div className="step-number">{status === 'completed' ? '✓' : currentStep === 'report_generation' ? <Loader2 className="spinner" /> : '4'}</div>
+                <div className="step-content">
+                  <div className="step-title">Report Generation</div>
+                  <div className="step-description">Generating analysis reports</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status === 'completed' && analysisId && (
+          <div className="completion-message">
+            <h3>✅ Analysis Complete!</h3>
+            <p>Your gait analysis is ready. View the reports tailored for different audiences:</p>
+            <div className="dashboard-links">
+              <p><strong>Analysis ID:</strong> <code>{analysisId}</code></p>
+              <div className="dashboard-buttons">
+                <button onClick={() => navigate(`/medical?analysisId=${analysisId}`)} className="btn btn-secondary">
+                  View Medical Report
+                </button>
+                <button onClick={() => navigate(`/caregiver?analysisId=${analysisId}`)} className="btn btn-secondary">
+                  View Caregiver Report
+                </button>
+                <button onClick={() => navigate(`/older-adult?analysisId=${analysisId}`)} className="btn btn-secondary">
+                  View Your Report
+                </button>
+              </div>
+              <p className="note">You can use the Analysis ID to access these reports later.</p>
+            </div>
           </div>
         )}
 
         <button
           onClick={handleUpload}
-          disabled={!file || uploading}
+          disabled={!file || status === 'uploading' || status === 'processing'}
           className="btn btn-primary"
           style={{ marginTop: '1rem' }}
         >
-          {uploading ? 'Uploading...' : 'Upload and Analyze'}
+          {status === 'uploading' ? 'Uploading...' : status === 'processing' ? 'Processing...' : 'Upload and Analyze'}
         </button>
       </div>
     </div>
