@@ -145,7 +145,7 @@ export default function AnalysisUpload() {
           type="file"
           accept="video/*"
           onChange={handleFileChange}
-          disabled={uploading}
+          disabled={status === 'uploading' || status === 'processing'}
           className="file-input"
         />
 
