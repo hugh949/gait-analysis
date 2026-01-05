@@ -24,15 +24,17 @@ echo "   • Image: $IMAGE"
 echo ""
 
 echo "═══════════════════════════════════════════════════════════"
-echo "📦 Step 1/4: Building Docker Image"
+echo "📦 Step 1/4: Building Docker Image (Optimized)"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 echo "⏳ Starting Docker build in Azure Container Registry..."
-echo "   This may take 3-5 minutes depending on dependencies..."
+echo "   Using optimized Dockerfile for better caching..."
+echo "   First build: 5-10 minutes (downloads dependencies)"
+echo "   Subsequent builds: 1-2 minutes (uses cached layers)"
 echo ""
 
-# Build with progress output
-BUILD_OUTPUT=$(az acr build --registry $REGISTRY --image $IMAGE . 2>&1)
+# Build with optimized Dockerfile for better caching
+BUILD_OUTPUT=$(az acr build --registry $REGISTRY --image $IMAGE --file Dockerfile.optimized . 2>&1)
 
 if [ $? -ne 0 ]; then
   echo ""
