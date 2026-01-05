@@ -47,16 +47,32 @@ export default function MedicalDashboard() {
   const fetchAnalysis = async (id: string) => {
     try {
       setLoading(true)
-      const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
+      setError(null)
+      
+      const url = `${API_URL}/api/v1/analysis/${id}`
+      console.log('Fetching analysis from:', url)
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      })
+      
+      console.log('Response status:', response.status)
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch analysis: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('API Error:', errorText)
+        throw new Error(`Failed to fetch analysis (${response.status}): ${errorText || response.statusText}`)
       }
       
       const data = await response.json()
+      console.log('Analysis data:', data)
       setAnalysis(data)
     } catch (err: any) {
-      setError(err.message || 'Failed to load analysis')
+      console.error('Fetch error:', err)
+      setError(err.message || 'Failed to load analysis. Please check the analysis ID and try again.')
     } finally {
       setLoading(false)
     }

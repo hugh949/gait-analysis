@@ -40,16 +40,25 @@ export default function OlderAdultDashboard() {
   const fetchAnalysis = async (id: string) => {
     try {
       setLoading(true)
-      const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
+      setError(null)
+      
+      const url = `${API_URL}/api/v1/analysis/${id}`
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      })
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch analysis: ${response.statusText}`)
+        const errorText = await response.text()
+        throw new Error(`Failed to fetch analysis (${response.status}): ${errorText || response.statusText}`)
       }
       
       const data = await response.json()
       setAnalysis(data)
     } catch (err: any) {
-      setError(err.message || 'Failed to load analysis')
+      setError(err.message || 'Failed to load analysis. Please check the analysis ID and try again.')
     } finally {
       setLoading(false)
     }
