@@ -107,7 +107,7 @@ class GaitAnalysisService:
             Dictionary with keypoints, 3D poses, and gait metrics
         """
         if progress_callback:
-            await progress_callback(5, "Opening video file...")
+            await progress_callback(0, "Opening video file...")
         
         # Use a simple list to store progress updates from sync thread
         progress_updates = []
