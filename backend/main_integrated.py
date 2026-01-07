@@ -80,6 +80,16 @@ app.add_middleware(
 # API routes
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["analysis"])
 
+# Also add a health endpoint at /api/v1/health for frontend compatibility
+@app.get("/api/v1/health")
+async def api_health_check():
+    """API health check endpoint (for frontend compatibility)"""
+    return {
+        "status": "healthy",
+        "service": "Gait Analysis API",
+        "version": "3.0.0"
+    }
+
 
 # Health check endpoints
 @app.get("/")
