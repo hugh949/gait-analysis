@@ -202,14 +202,35 @@ export default function AnalysisUpload() {
   }
 
   const pollAnalysisStatus = async (id: string) => {
+    let consecutiveErrors = 0
+    const maxConsecutiveErrors = 3
+    
     const poll = async () => {
       try {
         const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
         
+        if (response.status === 404) {
+          // Analysis not found - likely lost after container restart
+          console.warn(`Analysis ${id} not found - may have been lost after container restart`)
+          setStatus('failed')
+          setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
+          setAnalysisId(null) // Clear the stale ID
+          return // Stop polling
+        }
+        
         if (!response.ok) {
-          throw new Error(`Failed to fetch analysis status: ${response.statusText}`)
+          consecutiveErrors++
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            throw new Error(`Failed to fetch analysis status after ${maxConsecutiveErrors} attempts: ${response.statusText}`)
+          }
+          // Retry with exponential backoff
+          setTimeout(poll, 3000 * consecutiveErrors)
+          return
         }
 
+        // Reset error counter on success
+        consecutiveErrors = 0
+        
         const data = await response.json()
         const analysisStatus = data.status
 
@@ -250,8 +271,17 @@ export default function AnalysisUpload() {
         }
       } catch (err: any) {
         console.error('Polling error:', err)
+        consecutiveErrors++
+        
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          setStatus('failed')
+          setError(`Failed to get analysis status after ${maxConsecutiveErrors} attempts. ${err.message || 'Please try uploading again.'}`)
+          setAnalysisId(null) // Clear the stale ID
+          return // Stop polling
+        }
+        
         // Continue polling on error (analysis might still be processing)
-        setTimeout(poll, 3000)
+        setTimeout(poll, 3000 * consecutiveErrors) // Exponential backoff
       }
     }
 
