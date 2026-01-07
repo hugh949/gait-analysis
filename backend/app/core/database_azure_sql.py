@@ -28,9 +28,13 @@ class AzureSQLService:
     
     # In-memory storage for mock mode (when Azure SQL is not configured)
     _mock_storage: Dict[str, Dict] = {}
-    # Use /home directory which persists across container restarts in Azure App Service
-    # /tmp is ephemeral and gets cleared on restart
-    _mock_storage_file: str = os.getenv("MOCK_STORAGE_FILE", "/home/gait_analysis_mock_storage.json")
+    # Use /home/site directory which is guaranteed to persist across container restarts in Azure App Service
+    # /tmp and /home are ephemeral and may get cleared on restart
+    # /home/site is the persistent storage location in Azure App Service
+    _mock_storage_file: str = os.getenv(
+        "MOCK_STORAGE_FILE", 
+        os.path.join(os.getenv("HOME", "/home"), "site", "gait_analysis_mock_storage.json")
+    )
     
     def __init__(self):
         """Initialize Azure SQL Database connection"""
