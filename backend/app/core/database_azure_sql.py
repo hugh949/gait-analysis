@@ -20,6 +20,7 @@ class AzureSQLService:
     
     # In-memory storage for mock mode (when Azure SQL is not configured)
     _mock_storage: Dict[str, Dict] = {}
+    _mock_storage_file: str = "/tmp/gait_analysis_mock_storage.json"
     
     def __init__(self):
         """Initialize Azure SQL Database connection"""
@@ -162,6 +163,7 @@ class AzureSQLService:
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
+            self._save_mock_storage()  # Persist to file
             logger.info(f"Created analysis in mock storage: {analysis_id}. Total analyses: {len(AzureSQLService._mock_storage)}")
             return True
         
@@ -196,6 +198,7 @@ class AzureSQLService:
                 from datetime import datetime
                 AzureSQLService._mock_storage[analysis_id].update(updates)
                 AzureSQLService._mock_storage[analysis_id]['updated_at'] = datetime.now().isoformat()
+                self._save_mock_storage()  # Persist to file
                 logger.debug(f"Updated analysis in mock storage: {analysis_id}")
                 return True
             logger.warning(f"Analysis not found in mock storage: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}")
