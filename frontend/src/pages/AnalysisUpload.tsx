@@ -159,7 +159,17 @@ export default function AnalysisUpload() {
           console.error('Upload network error - XHR onerror fired')
           console.error('Response status:', xhr.status)
           console.error('Response text:', xhr.responseText)
-          reject(new Error(`Network error - Cannot connect to server. Please check:\n1. Backend is running at ${API_URL}\n2. CORS is configured correctly\n3. Network connection is stable`))
+          console.error('XHR readyState:', xhr.readyState)
+          
+          // Provide more helpful error message
+          let errorMsg = `Network error - Cannot connect to server.\n\n`
+          if (API_URL === '') {
+            errorMsg += `Backend URL: ${window.location.origin}\n`
+          } else {
+            errorMsg += `Backend URL: ${API_URL}\n`
+          }
+          errorMsg += `\nPlease check:\n1. Backend is running\n2. CORS is configured correctly\n3. Network connection is stable\n\nIf this persists, the server may have restarted. Please try uploading again.`
+          reject(new Error(errorMsg))
         }
 
         xhr.ontimeout = () => {
