@@ -198,7 +198,13 @@ async def process_analysis_azure(
         # Get gait analysis service
         gait_service = get_gait_analysis_service()
         if not gait_service:
-            raise ValueError("Gait analysis service is not available. Required dependencies (OpenCV, MediaPipe) may not be installed.")
+            error_msg = (
+                "Gait analysis service is not available. "
+                "Required dependencies (OpenCV, MediaPipe) may not be installed. "
+                "Please check that opencv-python and mediapipe are installed in the Docker container."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # Download video from blob storage to temporary file
         if video_url.startswith('http') or video_url.startswith('https'):
@@ -225,6 +231,19 @@ async def process_analysis_azure(
                 raise ValueError(f"Could not download video: {video_url}")
         
         logger.info(f"Video downloaded to: {video_path}")
+        
+        # Verify video file exists and is readable
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+        
+        if not os.access(video_path, os.R_OK):
+            raise PermissionError(f"Video file is not readable: {video_path}")
+        
+        file_size = os.path.getsize(video_path)
+        logger.info(f"Video file size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
+        
+        if file_size == 0:
+            raise ValueError(f"Video file is empty: {video_path}")
         
         # Step 1: Pose Estimation
         async def progress_callback(progress_pct: int, message: str):
