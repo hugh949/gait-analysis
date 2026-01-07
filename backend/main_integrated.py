@@ -69,15 +69,24 @@ app = FastAPI(
 )
 
 # CORS middleware
+# For integrated app, allow same-origin requests (relative URLs)
+# Also allow explicit origins from settings (for development/testing)
+cors_origins = settings.get_cors_origins()
+# Always allow same-origin (empty origin or same origin)
+# This is critical for integrated deployment where frontend and backend are on same domain
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
+    allow_origins=["*"] if "*" in cors_origins else cors_origins + ["null"],  # Allow same-origin
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
-# API routes
+# CRITICAL: Register API routes BEFORE catch-all routes
+# FastAPI matches routes in registration order, so specific routes must come first
+
+# API routes - must be registered before catch-all
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["analysis"])
 
 # Also add a health endpoint at /api/v1/health for frontend compatibility
@@ -136,16 +145,23 @@ if FRONTEND_DIR.exists():
         return {"error": "Not found"}
     
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(request: Request, full_path: str):
         """
         Serve React SPA - all non-API routes return index.html
         This enables client-side routing
-        """
-        # Don't serve API routes
-        if full_path.startswith("api/"):
-            return {"error": "Not found"}
         
-        # Serve index.html for all other routes
+        NOTE: This catch-all route should NOT match API routes because:
+        1. API routes are registered before this (more specific routes match first)
+        2. FastAPI matches routes in registration order
+        3. If an API route doesn't match, this will catch it (which is fine for 404s)
+        """
+        # Double-check: if this somehow matches an API route, return 404
+        # (This shouldn't happen due to route ordering, but safety check)
+        if full_path.startswith("api/"):
+            logger.warning(f"API route caught by catch-all: {full_path} - this shouldn't happen!")
+            return {"error": "API route not found", "path": full_path}
+        
+        # Serve index.html for all other routes (React SPA routing)
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
             return FileResponse(index_path)

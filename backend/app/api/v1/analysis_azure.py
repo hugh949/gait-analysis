@@ -57,6 +57,7 @@ class AnalysisResponse(BaseModel):
 
 @router.post("/upload", response_model=AnalysisResponse)
 async def upload_video(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     patient_id: Optional[str] = None,
