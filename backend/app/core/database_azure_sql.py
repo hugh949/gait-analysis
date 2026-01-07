@@ -99,9 +99,11 @@ class AzureSQLService:
         
         for attempt in range(max_retries):
             try:
-                if os.path.exists(AzureSQLService._mock_storage_file):
+                # Check if file exists - with explicit path resolution
+                file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+                if os.path.exists(file_path):
                     # Use file locking to prevent race conditions (if available)
-                    with open(AzureSQLService._mock_storage_file, 'r') as f:
+                    with open(file_path, 'r') as f:
                         if HAS_FCNTL:
                             try:
                                 fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
@@ -112,11 +114,17 @@ class AzureSQLService:
                             data = json.load(f)
                         
                         AzureSQLService._mock_storage = data
-                        logger.info(f"LOAD: Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {AzureSQLService._mock_storage_file} (attempt {attempt + 1})")
+                        logger.info(f"LOAD: Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {file_path} (attempt {attempt + 1})")
                         return  # Success - exit retry loop
                 else:
                     if attempt == 0:  # Only log on first attempt
-                        logger.debug(f"LOAD: Mock storage file does not exist yet: {AzureSQLService._mock_storage_file}")
+                        logger.debug(f"LOAD: Mock storage file does not exist yet: {file_path}")
+                        # List directory to see what's actually there
+                        try:
+                            dir_contents = os.listdir(storage_dir)
+                            logger.debug(f"LOAD: Directory contents: {dir_contents}")
+                        except Exception as e:
+                            logger.debug(f"LOAD: Could not list directory: {e}")
                     if not AzureSQLService._mock_storage:
                         AzureSQLService._mock_storage = {}
                     if attempt < max_retries - 1:
