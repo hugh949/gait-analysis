@@ -246,6 +246,7 @@ class AzureSQLService:
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
+            logger.debug(f"About to save mock storage with {len(AzureSQLService._mock_storage)} analyses")
             self._save_mock_storage()  # Persist to file
             logger.info(f"Created analysis in mock storage: {analysis_id}. Total analyses: {len(AzureSQLService._mock_storage)}")
             return True
@@ -281,6 +282,7 @@ class AzureSQLService:
                 from datetime import datetime
                 AzureSQLService._mock_storage[analysis_id].update(updates)
                 AzureSQLService._mock_storage[analysis_id]['updated_at'] = datetime.now().isoformat()
+                logger.debug(f"About to save mock storage after update. Total analyses: {len(AzureSQLService._mock_storage)}")
                 self._save_mock_storage()  # Persist to file
                 logger.debug(f"Updated analysis in mock storage: {analysis_id}")
                 return True
