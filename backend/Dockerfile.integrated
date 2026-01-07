@@ -48,5 +48,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 # Start the integrated application
-CMD ["uvicorn", "main_integrated:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "300"]
+# Use single worker to avoid multi-process file storage issues
+# For production, consider using Azure SQL Database instead of file-based mock storage
+CMD ["uvicorn", "main_integrated:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "300", "--workers", "1"]
 

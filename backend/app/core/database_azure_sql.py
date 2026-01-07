@@ -79,33 +79,62 @@ class AzureSQLService:
             self._init_schema()
     
     def _load_mock_storage(self):
-        """Load mock storage from file if it exists"""
-        try:
-            if os.path.exists(AzureSQLService._mock_storage_file):
-                # Use file locking to prevent race conditions (if available)
-                with open(AzureSQLService._mock_storage_file, 'r') as f:
-                    if HAS_FCNTL:
-                        try:
-                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
+        """Load mock storage from file if it exists, with retry logic for multi-worker scenarios"""
+        max_retries = 3
+        retry_delay = 0.1
+        
+        for attempt in range(max_retries):
+            try:
+                if os.path.exists(AzureSQLService._mock_storage_file):
+                    # Use file locking to prevent race conditions (if available)
+                    with open(AzureSQLService._mock_storage_file, 'r') as f:
+                        if HAS_FCNTL:
+                            try:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
+                                data = json.load(f)
+                            finally:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        else:
                             data = json.load(f)
-                        finally:
-                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                    else:
-                        data = json.load(f)
-                    
-                    AzureSQLService._mock_storage = data
-                    logger.info(f"Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {AzureSQLService._mock_storage_file}")
-            else:
-                logger.debug(f"Mock storage file does not exist yet: {AzureSQLService._mock_storage_file}")
+                        
+                        AzureSQLService._mock_storage = data
+                        logger.info(f"LOAD: Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {AzureSQLService._mock_storage_file} (attempt {attempt + 1})")
+                        return  # Success - exit retry loop
+                else:
+                    if attempt == 0:  # Only log on first attempt
+                        logger.debug(f"LOAD: Mock storage file does not exist yet: {AzureSQLService._mock_storage_file}")
+                    if not AzureSQLService._mock_storage:
+                        AzureSQLService._mock_storage = {}
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                        continue
+                    return  # File doesn't exist, give up after retries
+            except json.JSONDecodeError as e:
+                logger.error(f"LOAD: Invalid JSON in mock storage file (attempt {attempt + 1}): {e}. Resetting storage.")
+                AzureSQLService._mock_storage = {}
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                return
+            except IOError as e:
+                # File might be locked or temporarily unavailable (another process writing)
+                if attempt < max_retries - 1:
+                    logger.debug(f"LOAD: File temporarily unavailable (attempt {attempt + 1}): {e}. Retrying...")
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    logger.warning(f"LOAD: Failed to load mock storage after {max_retries} attempts: {e}")
+                    if not AzureSQLService._mock_storage:
+                        AzureSQLService._mock_storage = {}
+                    return
+            except Exception as e:
+                logger.warning(f"LOAD: Unexpected error loading mock storage (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
                 if not AzureSQLService._mock_storage:
                     AzureSQLService._mock_storage = {}
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in mock storage file: {e}. Resetting storage.")
-            AzureSQLService._mock_storage = {}
-        except Exception as e:
-            logger.warning(f"Failed to load mock storage from file: {e}")
-            if not AzureSQLService._mock_storage:
-                AzureSQLService._mock_storage = {}
+                return
     
     def _save_mock_storage(self):
         """Save mock storage to file with file locking"""
