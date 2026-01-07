@@ -16,3 +16,13 @@ venv/
 ENV/
 env/
 # Don't ignore frontend-dist - we need it!
+
+# Exclude old ML-based service files (not used in Azure native architecture)
+app/services/perception_stack.py
+app/services/lifting_3d.py
+app/services/3d_lifting.py
+app/services/multi_view_fusion.py
+app/services/environmental_robustness.py
+app/api/v1/analysis.py
+app/core/database.py
+app/core/config.py

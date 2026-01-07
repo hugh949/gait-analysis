@@ -1,25 +1,31 @@
 # Dockerfile for Integrated Application
 # Single container serving API + React frontend
-# Microsoft Native Architecture
+# Microsoft Native Architecture - NO ML libraries (torch, opencv, etc.)
+# Uses Azure managed services: Computer Vision, Blob Storage, SQL Database
 
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (minimal - only what's needed for Azure SDKs)
 RUN apt-get update && apt-get install -y \
     gcc \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
+# requirements.txt contains ONLY Azure SDKs - no torch, no ML libraries
 COPY requirements.txt .
 
 # Install Python dependencies
+# This installs: fastapi, uvicorn, azure-storage-blob, azure-cognitiveservices-vision-computervision, etc.
+# NO torch, NO opencv, NO mmpose, NO smplx, NO transformers
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
+# Note: .dockerignore excludes old ML-based service files (perception_stack.py, etc.)
+# Only Azure-native services are included: azure_storage.py, azure_vision.py, database_azure_sql.py
 COPY app/ ./app/
 COPY main_integrated.py .
 COPY app/core/config_simple.py ./app/core/
