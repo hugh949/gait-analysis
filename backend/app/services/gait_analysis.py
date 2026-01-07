@@ -8,10 +8,16 @@ from typing import List, Dict, Optional, Tuple, Callable
 from pathlib import Path
 import tempfile
 import os
-from loguru import logger
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import threading
+
+# Import logger - handle gracefully if not available
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 # Optional imports - handle gracefully if not available
 try:
