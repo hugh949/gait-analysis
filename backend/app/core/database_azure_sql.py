@@ -44,6 +44,10 @@ class AzureSQLService:
             logger.warning("Azure SQL not configured - using in-memory mock storage")
             self.connection_string = None
             self._use_mock = True
+            # Ensure class variable exists (in case it was cleared)
+            if not hasattr(AzureSQLService, '_mock_storage') or AzureSQLService._mock_storage is None:
+                AzureSQLService._mock_storage = {}
+                logger.info("Initialized mock storage dictionary")
         else:
             self._use_mock = False
             # Build connection string
