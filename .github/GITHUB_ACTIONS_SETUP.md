@@ -4,11 +4,11 @@ This guide explains how to set up automated deployments to Azure using GitHub Ac
 
 ## Overview
 
-We have three GitHub Actions workflows:
+We have one GitHub Actions workflow:
 
-1. **deploy-backend.yml** - Deploys backend only (when `backend/` changes)
-2. **deploy-frontend.yml** - Deploys frontend only (when `frontend/` changes)
-3. **deploy-integrated.yml** - Deploys both frontend and backend together (when both change)
+1. **deploy-integrated.yml** - Deploys the integrated application (frontend + backend in one Docker container)
+
+This is the correct workflow for our current architecture where the frontend and backend are integrated into a single application served from one App Service.
 
 ## Required GitHub Secrets
 
@@ -118,11 +118,12 @@ The workflows use these Azure resources (already created):
 
 ### Automatic Deployment
 
-Workflows trigger automatically when you push to the `main` branch:
+The workflow triggers automatically when you push to the `main` branch and any of these paths change:
 
-- **Backend changes** (`backend/**`) → Runs `deploy-backend.yml`
-- **Frontend changes** (`frontend/**`) → Runs `deploy-frontend.yml`
-- **Both change** → Runs `deploy-integrated.yml`
+- **Backend changes** (`backend/**`)
+- **Frontend changes** (`frontend/**`)
+- **Workflow changes** (`.github/workflows/deploy-integrated.yml`)
+- **Deployment script changes** (`scripts/deploy-integrated-app.sh`)
 
 ### Manual Deployment
 
@@ -135,23 +136,6 @@ You can also trigger deployments manually:
 5. Select branch and click "Run workflow"
 
 ## Workflow Steps
-
-### Backend Deployment (`deploy-backend.yml`)
-
-1. Checkout code
-2. Build Docker image in Azure Container Registry (ACR)
-3. Configure App Service to use the new image
-4. Set environment variables (CORS, ports, Azure service credentials)
-5. Restart App Service
-6. Wait for container to start
-7. Run health check
-
-### Frontend Deployment (`deploy-frontend.yml`)
-
-1. Checkout code
-2. Install Node.js dependencies
-3. Build frontend
-4. Deploy to Azure Static Web Apps
 
 ### Integrated Deployment (`deploy-integrated.yml`)
 
