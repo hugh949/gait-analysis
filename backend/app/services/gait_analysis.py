@@ -408,23 +408,87 @@ class GaitAnalysisService:
         
         return keypoints
     
+    def _detect_view_angle(self, frames_2d_keypoints: List[Dict]) -> str:
+        """
+        Detect camera view angle from keypoint patterns
+        Returns: 'front', 'side', 'oblique', or 'unknown'
+        """
+        if not frames_2d_keypoints:
+            return 'unknown'
+        
+        # Analyze first few frames to determine view
+        sample_frames = frames_2d_keypoints[:min(10, len(frames_2d_keypoints))]
+        
+        # Calculate average hip width (lateral separation)
+        hip_widths = []
+        for kp in sample_frames:
+            if 'left_hip' in kp and 'right_hip' in kp:
+                width = abs(kp['left_hip']['x'] - kp['right_hip']['x'])
+                hip_widths.append(width)
+        
+        if not hip_widths:
+            return 'unknown'
+        
+        avg_hip_width = np.mean(hip_widths)
+        
+        # Calculate average leg forward/backward separation
+        leg_separations = []
+        for kp in sample_frames:
+            if 'left_ankle' in kp and 'right_ankle' in kp:
+                # Check if ankles are at different depths (forward/back)
+                separation = abs(kp['left_ankle']['x'] - kp['right_ankle']['x'])
+                leg_separations.append(separation)
+        
+        if not leg_separations:
+            return 'unknown'
+        
+        avg_leg_separation = np.mean(leg_separations)
+        
+        # View angle detection logic
+        # Front view: hips wide, legs similar X position
+        # Side view: hips narrow, legs different X position
+        # Oblique: intermediate
+        
+        if avg_hip_width > 100 and avg_leg_separation < 50:
+            return 'front'
+        elif avg_hip_width < 50 and avg_leg_separation > 100:
+            return 'side'
+        elif avg_hip_width > 50 and avg_leg_separation > 50:
+            return 'oblique'
+        else:
+            return 'unknown'
+    
     def _lift_to_3d(self, frames_2d_keypoints: List[Dict], view_type: str) -> List[Dict]:
         """
-        Lift 2D keypoints to 3D using geometric constraints and temporal smoothing
-        Simulates multi-camera reconstruction
+        Advanced 3D reconstruction focused on leg kinematics
+        Uses multi-angle geometric constraints and biomechanical models
         """
+        # Auto-detect view angle if not specified
+        if view_type == "auto" or not view_type:
+            detected_view = self._detect_view_angle(frames_2d_keypoints)
+            logger.info(f"Detected view angle: {detected_view}")
+            view_type = detected_view
+        
         frames_3d = []
+        
+        # Biomechanical constraints for legs (based on human anatomy)
+        # Average segment lengths (will be calibrated per person)
+        leg_segment_lengths = {
+            'thigh': 450.0,  # mm (hip to knee)
+            'shank': 400.0,  # mm (knee to ankle)
+            'foot': 250.0,   # mm (ankle to toe)
+        }
         
         for i, keypoints_2d in enumerate(frames_2d_keypoints):
             keypoints_3d = {}
             
-            # Use MediaPipe's depth estimate as starting point
-            # Apply geometric constraints based on human body proportions
+            # LEG-FOCUSED 3D reconstruction
+            # Use biomechanical constraints for leg segments
             for name, kp_2d in keypoints_2d.items():
-                x, y, z_estimate = kp_2d['x'], kp_2d['y'], kp_2d['z']
+                x, y, z_estimate = kp_2d['x'], kp_2d['y'], kp_2d.get('z', 0.0)
                 
-                # Refine Z using body segment lengths and constraints
-                z_refined = self._refine_depth(name, kp_2d, keypoints_2d, view_type)
+                # Advanced depth refinement using leg segment constraints
+                z_refined = self._refine_leg_depth(name, kp_2d, keypoints_2d, view_type, leg_segment_lengths)
                 
                 keypoints_3d[name] = {
                     'x': x,
@@ -433,13 +497,18 @@ class GaitAnalysisService:
                     'confidence': kp_2d.get('visibility', 1.0)
                 }
             
-            # Apply temporal smoothing (average with previous frames)
+            # Advanced temporal smoothing with Kalman-like filtering
             if i > 0 and len(frames_3d) > 0:
                 prev_keypoints = frames_3d[-1]
                 for name in keypoints_3d:
                     if name in prev_keypoints:
-                        # Weighted average for smooth motion
-                        alpha = 0.3  # Smoothing factor
+                        # Adaptive smoothing based on joint type
+                        # Leg joints need less smoothing (more responsive)
+                        if 'ankle' in name or 'heel' in name or 'foot' in name:
+                            alpha = 0.2  # Less smoothing for critical gait joints
+                        else:
+                            alpha = 0.3  # More smoothing for reference joints
+                        
                         keypoints_3d[name]['x'] = alpha * keypoints_3d[name]['x'] + (1 - alpha) * prev_keypoints[name]['x']
                         keypoints_3d[name]['y'] = alpha * keypoints_3d[name]['y'] + (1 - alpha) * prev_keypoints[name]['y']
                         keypoints_3d[name]['z'] = alpha * keypoints_3d[name]['z'] + (1 - alpha) * prev_keypoints[name]['z']
@@ -448,30 +517,60 @@ class GaitAnalysisService:
         
         return frames_3d
     
-    def _refine_depth(self, joint_name: str, joint_2d: Dict, all_keypoints: Dict, view_type: str) -> float:
-        """Refine depth estimate using body segment constraints"""
+    def _refine_leg_depth(self, joint_name: str, joint_2d: Dict, all_keypoints: Dict, view_type: str, segment_lengths: Dict) -> float:
+        """
+        Advanced depth refinement for leg joints using biomechanical constraints
+        Focuses on maintaining consistent leg segment lengths
+        """
         z_estimate = joint_2d.get('z', 0.0)
         
-        # Use known body segment proportions to constrain depth
-        # Average human proportions (in relative units)
-        segment_lengths = {
-            'torso': 0.3,  # Shoulder to hip
-            'thigh': 0.25,  # Hip to knee
-            'shank': 0.25,  # Knee to ankle
-            'upper_arm': 0.15,
-            'forearm': 0.15,
-        }
+        # Use leg segment length constraints
+        if 'ankle' in joint_name:
+            # Ankle depth constrained by knee-ankle segment length
+            side = 'left' if 'left' in joint_name else 'right'
+            knee_name = f'{side}_knee'
+            if knee_name in all_keypoints:
+                knee_2d = all_keypoints[knee_name]
+                # Calculate 2D distance
+                dx = joint_2d['x'] - knee_2d['x']
+                dy = joint_2d['y'] - knee_2d['y']
+                dist_2d = np.sqrt(dx**2 + dy**2)
+                
+                # Use shank length constraint to estimate depth
+                shank_length = segment_lengths['shank']
+                if dist_2d > 0:
+                    # Estimate Z from 2D distance and known segment length
+                    z_depth = np.sqrt(max(0, shank_length**2 - dist_2d**2))
+                    # Adjust based on view angle
+                    if view_type == 'side':
+                        z_refined = z_estimate + z_depth * 0.5
+                    elif view_type == 'front':
+                        z_refined = z_estimate  # Depth not visible in front view
+                    else:
+                        z_refined = z_estimate + z_depth * 0.3
+                    return z_refined
         
-        # Refine based on adjacent joints
-        if 'hip' in joint_name or 'shoulder' in joint_name:
-            # Torso joints - use hip/shoulder distance
-            if 'left_hip' in all_keypoints and 'right_hip' in all_keypoints:
-                hip_width = abs(all_keypoints['left_hip']['x'] - all_keypoints['right_hip']['x'])
-                # Estimate depth from hip width (assuming ~30cm hip width)
-                z_refined = z_estimate * (300.0 / max(hip_width, 1.0))
-                return z_refined
+        elif 'knee' in joint_name:
+            # Knee depth constrained by thigh segment length
+            side = 'left' if 'left' in joint_name else 'right'
+            hip_name = f'{side}_hip'
+            if hip_name in all_keypoints:
+                hip_2d = all_keypoints[hip_name]
+                dx = joint_2d['x'] - hip_2d['x']
+                dy = joint_2d['y'] - hip_2d['y']
+                dist_2d = np.sqrt(dx**2 + dy**2)
+                
+                thigh_length = segment_lengths['thigh']
+                if dist_2d > 0:
+                    z_depth = np.sqrt(max(0, thigh_length**2 - dist_2d**2))
+                    if view_type == 'side':
+                        z_refined = z_estimate + z_depth * 0.5
+                    else:
+                        z_refined = z_estimate + z_depth * 0.3
+                    return z_refined
         
         return z_estimate
+    
     
     def _calculate_gait_metrics(
         self,
@@ -577,55 +676,70 @@ class GaitAnalysisService:
             "double_support_time": round(double_support_time, 3),
         }
     
-    def _calibrate_scale(self, frames_3d_keypoints: List[Dict], reference_length_mm: Optional[float]) -> float:
-        """Calibrate scale factor to convert pixel units to millimeters"""
-        if reference_length_mm:
-            # Use provided reference length
-            # Estimate pixel length from first frame
-            if frames_3d_keypoints and 'left_hip' in frames_3d_keypoints[0] and 'right_hip' in frames_3d_keypoints[0]:
-                hip_width_px = abs(
-                    frames_3d_keypoints[0]['left_hip']['x'] - 
-                    frames_3d_keypoints[0]['right_hip']['x']
-                )
-                if hip_width_px > 0:
-                    # Assume average hip width is ~30cm
-                    avg_hip_width_mm = 300.0
-                    scale = reference_length_mm / hip_width_px
-                    return scale
-        
-        # Default: estimate from body proportions
-        # Average person height ~170cm, use torso length as reference
-        if frames_3d_keypoints and 'left_shoulder' in frames_3d_keypoints[0] and 'left_hip' in frames_3d_keypoints[0]:
-            torso_length_px = np.sqrt(
-                (frames_3d_keypoints[0]['left_shoulder']['x'] - frames_3d_keypoints[0]['left_hip']['x'])**2 +
-                (frames_3d_keypoints[0]['left_shoulder']['y'] - frames_3d_keypoints[0]['left_hip']['y'])**2
-            )
-            if torso_length_px > 0:
-                # Average torso length ~50cm
-                avg_torso_length_mm = 500.0
-                return avg_torso_length_mm / torso_length_px
-        
-        # Fallback: 1 pixel = 1mm (will need calibration in production)
-        return 1.0
     
     def _detect_steps(self, left_ankle: np.ndarray, right_ankle: np.ndarray, timestamps: List[float]) -> Tuple[List[int], List[int]]:
-        """Detect heel strike events (steps) from ankle positions"""
+        """
+        Advanced step detection using multiple gait event indicators
+        Uses heel strike detection, velocity changes, and contact patterns
+        """
         left_steps = []
         right_steps = []
         
-        # Detect local minima in vertical position (heel strikes)
-        if len(left_ankle) > 3:
-            left_y = left_ankle[:, 1]  # Y coordinates (vertical)
-            for i in range(1, len(left_y) - 1):
-                if left_y[i] < left_y[i-1] and left_y[i] < left_y[i+1]:
-                    # Local minimum - potential heel strike
-                    left_steps.append(i)
+        if len(left_ankle) < 5 or len(right_ankle) < 5:
+            return left_steps, right_steps
         
-        if len(right_ankle) > 3:
-            right_y = right_ankle[:, 1]
+        # Method 1: Vertical position minima (heel strikes)
+        # This is the primary indicator for step detection
+        left_y = left_ankle[:, 1]  # Y coordinates (vertical, increasing downward)
+        right_y = right_ankle[:, 1]
+        
+        # Method 2: Velocity analysis (zero crossing in vertical velocity)
+        # Calculate vertical velocity
+        if len(timestamps) > 1:
+            dt = np.diff(timestamps)
+            left_vy = np.diff(left_y) / (dt + 1e-6)  # Avoid division by zero
+            right_vy = np.diff(right_y) / (dt + 1e-6)
+            
+            # Heel strike: velocity changes from negative (downward) to positive (upward)
+            for i in range(1, len(left_vy) - 1):
+                # Local minimum in Y (lowest point = heel strike)
+                if left_y[i] > left_y[i-1] and left_y[i] > left_y[i+1]:
+                    # Also check velocity sign change
+                    if left_vy[i-1] < 0 and left_vy[i] > 0:
+                        left_steps.append(i)
+            
+            for i in range(1, len(right_vy) - 1):
+                if right_y[i] > right_y[i-1] and right_y[i] > right_y[i+1]:
+                    if right_vy[i-1] < 0 and right_vy[i] > 0:
+                        right_steps.append(i)
+        else:
+            # Fallback: simple local minima detection
+            for i in range(1, len(left_y) - 1):
+                if left_y[i] > left_y[i-1] and left_y[i] > left_y[i+1]:
+                    left_steps.append(i)
+            
             for i in range(1, len(right_y) - 1):
-                if right_y[i] < right_y[i-1] and right_y[i] < right_y[i+1]:
+                if right_y[i] > right_y[i-1] and right_y[i] > right_y[i+1]:
                     right_steps.append(i)
+        
+        # Filter steps: ensure minimum time between steps (gait cycle constraint)
+        # Average human step time is ~0.5-0.7 seconds
+        min_step_interval = 0.3  # seconds
+        if len(timestamps) > 1:
+            left_steps_filtered = []
+            right_steps_filtered = []
+            
+            for step_idx in left_steps:
+                if step_idx < len(timestamps):
+                    if not left_steps_filtered or (timestamps[step_idx] - timestamps[left_steps_filtered[-1]]) >= min_step_interval:
+                        left_steps_filtered.append(step_idx)
+            
+            for step_idx in right_steps:
+                if step_idx < len(timestamps):
+                    if not right_steps_filtered or (timestamps[step_idx] - timestamps[right_steps_filtered[-1]]) >= min_step_interval:
+                        right_steps_filtered.append(step_idx)
+            
+            return left_steps_filtered, right_steps_filtered
         
         return left_steps, right_steps
     

@@ -24,10 +24,11 @@ loguru>=0.7.0
 # Minimal numpy (if needed by Azure SDKs)
 numpy>=1.24.0
 
-# Gait Analysis - Advanced Pose Estimation
+# Gait Analysis - Advanced Pose Estimation (Leg-Focused)
 opencv-python>=4.8.0
-mediapipe>=0.10.0
+mediapipe>=0.10.8,<0.11.0  # Pin version for compatibility
 aiohttp>=3.9.0
+scipy>=1.11.0  # For advanced signal processing and filtering
 
 # Testing
 pytest==7.4.3
