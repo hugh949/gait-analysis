@@ -103,3 +103,4 @@ az containerapp show \
 The application now exclusively uses **East US 2** and will be ready for testing once the Docker image is built and deployed!
 
 
+

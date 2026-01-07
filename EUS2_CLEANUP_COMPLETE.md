@@ -93,3 +93,4 @@ curl -X OPTIONS \
 The application now exclusively uses **East US 2** resources!
 
 
+

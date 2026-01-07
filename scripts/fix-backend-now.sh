@@ -83,3 +83,4 @@ echo "   • Container may still be pulling image (first time takes 3-5 minutes)
 echo "   • Check logs: az webapp log tail --name $APP_SERVICE_NAME --resource-group $RESOURCE_GROUP"
 echo ""
 
+

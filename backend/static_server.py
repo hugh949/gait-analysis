@@ -24,3 +24,4 @@ if os.path.exists(static_dir):
             return FileResponse(index_path)
         return {"error": "Frontend not found"}
 
+

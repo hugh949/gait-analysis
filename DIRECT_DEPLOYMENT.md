@@ -59,3 +59,4 @@ az webapp restart --name gait-analysis-api-simple --resource-group gait-analysis
 - GitHub is no longer part of the deployment pipeline
 
 
+

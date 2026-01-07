@@ -48,3 +48,4 @@ echo "✅ Container App updated!"
 echo "Backend URL: https://gait-analysis-api-wus3.jollymeadow-b5f64007.eastus2.azurecontainerapps.io"
 
 
+

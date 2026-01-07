@@ -56,3 +56,4 @@ wait $PROGRESS_PID 2>/dev/null || true
 - **The user has emphasized this multiple times - it's critical for their workflow**
 - **Never deploy without progress messages for long-running operations**
 
+

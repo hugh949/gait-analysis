@@ -76,3 +76,4 @@ echo "   curl https://gait-analysis-api-simple.azurewebsites.net/health"
 echo ""
 
 
+

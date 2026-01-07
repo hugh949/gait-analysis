@@ -249,3 +249,4 @@ echo ""
 echo "⚠️  Application not responding yet. Check Azure Portal logs."
 echo "   Container may need a few more minutes to start."
 
+

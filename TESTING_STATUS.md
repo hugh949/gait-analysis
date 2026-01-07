@@ -120,3 +120,4 @@ az containerapp logs show \
 The application is ready for testing! 🎉
 
 
+

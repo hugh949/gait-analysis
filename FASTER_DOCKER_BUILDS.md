@@ -160,3 +160,4 @@ az acr build --registry gaitanalysisacrwus3 \
 For development, Standard SKU is usually the best balance.
 
 
+

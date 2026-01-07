@@ -138,3 +138,4 @@ output cosmosDatabaseName string = 'gait-analysis-db'
 output keyVaultName string = keyVault.name
 
 
+

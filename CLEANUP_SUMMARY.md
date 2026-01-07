@@ -81,3 +81,4 @@ az containerapp show \
 The application now exclusively uses **East US 2** and the upload functionality should work once the new Docker image is deployed!
 
 
+

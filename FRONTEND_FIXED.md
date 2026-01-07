@@ -55,3 +55,4 @@ The original Static Web App was in the deleted resource group. A new Static Web 
 The application is fully functional with all resources in East US 2.
 
 
+

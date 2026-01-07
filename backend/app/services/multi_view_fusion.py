@@ -302,3 +302,4 @@ class MultiViewFusionService:
         return np.ones((num_frames, 17)) * 0.9  # Placeholder
 
 
+

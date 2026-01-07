@@ -61,3 +61,4 @@ def test_app_imports():
     # Should not raise exceptions
     assert True
 
+

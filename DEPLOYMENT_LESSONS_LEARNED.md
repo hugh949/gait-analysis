@@ -123,3 +123,4 @@ https://gait-analysis-api-simple.azurewebsites.net
 5. **Always use `/health` endpoint** for health checks
 6. **Always test on macOS** (different from Linux)
 
+
