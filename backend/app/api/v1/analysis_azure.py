@@ -245,27 +245,36 @@ async def process_analysis_azure(
         if file_size == 0:
             raise ValueError(f"Video file is empty: {video_path}")
         
-        # Step 1: Pose Estimation
+        # Progress callback that maps internal progress to UI steps
         async def progress_callback(progress_pct: int, message: str):
-            # Map progress to overall steps
-            if progress_pct < 60:
-                # Pose estimation phase (0-60%)
-                step = 'pose_estimation'
-                mapped_progress = 10 + int(progress_pct * 0.5)
-            elif progress_pct < 80:
-                # 3D lifting phase (60-80%)
-                step = '3d_lifting'
-                mapped_progress = 60 + int((progress_pct - 60) * 0.2)
-            else:
-                # Metrics calculation phase (80-100%)
-                step = 'metrics_calculation'
-                mapped_progress = 80 + int((progress_pct - 80) * 0.2)
-            
-            await db_service.update_analysis(analysis_id, {
-                'current_step': step,
-                'step_progress': mapped_progress,
-                'step_message': message
-            })
+            """Map internal progress (0-100%) to UI steps (pose_estimation, 3d_lifting, metrics_calculation, report_generation)"""
+            try:
+                # Map progress to overall steps with clear boundaries
+                if progress_pct < 50:
+                    # Pose estimation phase: 0-50% internal = 10-60% UI
+                    step = 'pose_estimation'
+                    mapped_progress = 10 + int(progress_pct * 1.0)  # 10% to 60%
+                elif progress_pct < 75:
+                    # 3D lifting phase: 50-75% internal = 60-75% UI
+                    step = '3d_lifting'
+                    mapped_progress = 60 + int((progress_pct - 50) * 0.6)  # 60% to 75%
+                elif progress_pct < 95:
+                    # Metrics calculation phase: 75-95% internal = 75-90% UI
+                    step = 'metrics_calculation'
+                    mapped_progress = 75 + int((progress_pct - 75) * 0.75)  # 75% to 90%
+                else:
+                    # Report generation phase: 95-100% internal = 90-100% UI
+                    step = 'report_generation'
+                    mapped_progress = 90 + int((progress_pct - 95) * 2.0)  # 90% to 100%
+                
+                logger.debug(f"Progress update: {step} {mapped_progress}% - {message}")
+                await db_service.update_analysis(analysis_id, {
+                    'current_step': step,
+                    'step_progress': mapped_progress,
+                    'step_message': message
+                })
+            except Exception as e:
+                logger.error(f"Error updating progress: {e}", exc_info=True)
         
         # Analyze video using advanced gait analysis
         analysis_result = await gait_service.analyze_video(

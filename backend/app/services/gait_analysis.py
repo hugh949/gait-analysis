@@ -247,8 +247,9 @@ class GaitAnalysisService:
             
             frame_count += 1
             
-            # Progress update
-            if progress_callback and frame_count % 30 == 0:
+            # Progress update - more frequent updates (every 10 frames instead of 30)
+            if progress_callback and frame_count % 10 == 0:
+                # Pose estimation phase: 0-50% of total progress
                 progress = min(50, int((frame_count / total_frames) * 50))
                 progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
         
@@ -260,8 +261,16 @@ class GaitAnalysisService:
         
         logger.info(f"Detected poses in {len(frames_2d_keypoints)} frames")
         
+        # Progress: Moving to 3D lifting phase
+        if progress_callback:
+            progress_callback(55, "Lifting 2D keypoints to 3D...")
+        
         # Lift 2D keypoints to 3D
         frames_3d_keypoints = self._lift_to_3d(frames_2d_keypoints, view_type)
+        
+        # Progress: Moving to metrics calculation
+        if progress_callback:
+            progress_callback(75, "Calculating gait parameters...")
     
     def _create_dummy_keypoints(self, width: int, height: int) -> Dict:
         """Create dummy keypoints for fallback when MediaPipe is not available"""
