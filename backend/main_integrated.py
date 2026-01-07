@@ -34,9 +34,16 @@ from app.core.config_simple import settings
 from app.api.v1.analysis_azure import router as analysis_router
 
 # Get paths
+# In Docker, frontend is at /app/frontend/dist (copied from backend/frontend-dist)
 BASE_DIR = Path(__file__).parent
-FRONTEND_DIR = BASE_DIR.parent / "frontend" / "dist"
+FRONTEND_DIR = BASE_DIR / "frontend" / "dist"
 STATIC_DIR = FRONTEND_DIR / "assets" if FRONTEND_DIR.exists() else None
+
+# Log frontend path for debugging
+logger.info(f"Frontend directory: {FRONTEND_DIR}")
+logger.info(f"Frontend exists: {FRONTEND_DIR.exists()}")
+if FRONTEND_DIR.exists():
+    logger.info(f"Frontend files: {list(FRONTEND_DIR.iterdir())}")
 
 
 @asynccontextmanager
