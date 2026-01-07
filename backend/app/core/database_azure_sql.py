@@ -18,6 +18,9 @@ except ImportError:
 class AzureSQLService:
     """Azure SQL Database service"""
     
+    # In-memory storage for mock mode (when Azure SQL is not configured)
+    _mock_storage: Dict[str, Dict] = {}
+    
     def __init__(self):
         """Initialize Azure SQL Database connection"""
         self.server = os.getenv(
@@ -38,9 +41,11 @@ class AzureSQLService:
         )
         
         if not all([self.server, self.username, self.password]):
-            logger.warning("Azure SQL not configured - using mock")
+            logger.warning("Azure SQL not configured - using in-memory mock storage")
             self.connection_string = None
+            self._use_mock = True
         else:
+            self._use_mock = False
             # Build connection string
             driver = "{ODBC Driver 18 for SQL Server}"
             self.connection_string = (
@@ -136,6 +141,26 @@ class AzureSQLService:
     
     async def create_analysis(self, analysis_data: Dict) -> bool:
         """Create new analysis record"""
+        if self._use_mock:
+            # Store in in-memory mock storage
+            from datetime import datetime
+            analysis_id = analysis_data.get('id')
+            self._mock_storage[analysis_id] = {
+                'id': analysis_id,
+                'patient_id': analysis_data.get('patient_id'),
+                'filename': analysis_data.get('filename'),
+                'video_url': analysis_data.get('video_url'),
+                'status': analysis_data.get('status', 'processing'),
+                'current_step': analysis_data.get('current_step', 'pose_estimation'),
+                'step_progress': analysis_data.get('step_progress', 0),
+                'step_message': analysis_data.get('step_message', 'Initializing...'),
+                'metrics': analysis_data.get('metrics', {}),
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }
+            logger.info(f"Created analysis in mock storage: {analysis_id}")
+            return True
+        
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -161,6 +186,17 @@ class AzureSQLService:
     
     async def update_analysis(self, analysis_id: str, updates: Dict) -> bool:
         """Update analysis record"""
+        if self._use_mock:
+            # Update in-memory mock storage
+            if analysis_id in self._mock_storage:
+                from datetime import datetime
+                self._mock_storage[analysis_id].update(updates)
+                self._mock_storage[analysis_id]['updated_at'] = datetime.now().isoformat()
+                logger.debug(f"Updated analysis in mock storage: {analysis_id}")
+                return True
+            logger.warning(f"Analysis not found in mock storage: {analysis_id}")
+            return False
+        
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -192,6 +228,14 @@ class AzureSQLService:
     
     async def get_analysis(self, analysis_id: str) -> Optional[Dict]:
         """Get analysis record"""
+        if self._use_mock:
+            # Get from in-memory mock storage
+            if analysis_id in self._mock_storage:
+                logger.debug(f"Retrieved analysis from mock storage: {analysis_id}")
+                return self._mock_storage[analysis_id].copy()
+            logger.debug(f"Analysis not found in mock storage: {analysis_id}")
+            return None
+        
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
