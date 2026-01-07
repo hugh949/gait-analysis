@@ -3,9 +3,19 @@ import { useSearchParams } from 'react-router-dom'
 import './Dashboard.css'
 
 const getApiUrl = () => {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('azurestaticapps.net')) {
-    return 'https://gait-native-api-wus3.azurewebsites.net'
+  // If running on same domain as backend (integrated deployment), use relative URLs
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname
+    // Integrated app - frontend and backend on same domain
+    if (hostname.includes('azurewebsites.net') || hostname.includes('localhost')) {
+      return '' // Use relative URLs - same origin
+    }
+    // Separate frontend deployment (if using Static Web Apps)
+    if (hostname.includes('azurestaticapps.net')) {
+      return 'https://gaitanalysisapp.azurewebsites.net'
+    }
   }
+  // Development fallback
   return (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
 }
 
