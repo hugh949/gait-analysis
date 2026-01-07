@@ -7,20 +7,27 @@ const getApiUrl = () => {
   // If running on same domain as backend (integrated deployment), use relative URLs
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname
+    const origin = window.location.origin
+    
     // Integrated app - frontend and backend on same domain
     if (hostname.includes('azurewebsites.net') || hostname.includes('localhost')) {
+      console.log(`[API URL] Using relative URLs (same origin: ${origin})`)
       return '' // Use relative URLs - same origin
     }
     // Separate frontend deployment (if using Static Web Apps)
     if (hostname.includes('azurestaticapps.net')) {
+      console.log(`[API URL] Using absolute URL for Static Web Apps`)
       return 'https://gaitanalysisapp.azurewebsites.net'
     }
   }
   // Development fallback
-  return (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
+  const devUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'
+  console.log(`[API URL] Using development URL: ${devUrl}`)
+  return devUrl
 }
 
 const API_URL = getApiUrl()
+console.log(`[API URL] Final API_URL: "${API_URL}" (empty = relative, non-empty = absolute)`)
 
 type UploadStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'failed'
 
@@ -156,19 +163,50 @@ export default function AnalysisUpload() {
           if (progressCheckInterval) {
             clearInterval(progressCheckInterval)
           }
+          
+          const actualUrl = API_URL === '' ? window.location.origin : API_URL
+          const fullUrl = `${actualUrl}/api/v1/analysis/upload`
+          
           console.error('Upload network error - XHR onerror fired')
-          console.error('Response status:', xhr.status)
-          console.error('Response text:', xhr.responseText)
           console.error('XHR readyState:', xhr.readyState)
+          console.error('XHR status:', xhr.status)
+          console.error('XHR statusText:', xhr.statusText)
+          console.error('Request URL:', fullUrl)
+          console.error('API_URL:', API_URL)
+          console.error('Window origin:', window.location.origin)
+          console.error('Window hostname:', window.location.hostname)
+          
+          // Determine error type
+          let errorType = 'Unknown network error'
+          if (xhr.readyState === 0) {
+            errorType = 'Request not sent (network/CORS issue)'
+          } else if (xhr.status === 0) {
+            errorType = 'Request failed (network/CORS/timeout)'
+          } else if (xhr.status >= 400) {
+            errorType = `HTTP error: ${xhr.status} ${xhr.statusText}`
+          }
           
           // Provide more helpful error message
-          let errorMsg = `Network error - Cannot connect to server.\n\n`
+          let errorMsg = `Network error - ${errorType}\n\n`
+          errorMsg += `Request URL: ${fullUrl}\n`
+          errorMsg += `Current page: ${window.location.href}\n\n`
+          
           if (API_URL === '') {
-            errorMsg += `Backend URL: ${window.location.origin}\n`
+            errorMsg += `Using relative URLs (same origin).\n`
           } else {
-            errorMsg += `Backend URL: ${API_URL}\n`
+            errorMsg += `Using absolute URL: ${API_URL}\n`
           }
-          errorMsg += `\nPlease check:\n1. Backend is running\n2. CORS is configured correctly\n3. Network connection is stable\n\nIf this persists, the server may have restarted. Please try uploading again.`
+          
+          errorMsg += `\nPossible causes:\n`
+          errorMsg += `1. Server is restarting (check logs)\n`
+          errorMsg += `2. CORS configuration issue\n`
+          errorMsg += `3. Network connectivity problem\n`
+          errorMsg += `4. Request timeout (file too large?)\n\n`
+          errorMsg += `Please try:\n`
+          errorMsg += `- Wait a few seconds and try again\n`
+          errorMsg += `- Check browser console for more details\n`
+          errorMsg += `- Try with a smaller file if timeout occurred`
+          
           reject(new Error(errorMsg))
         }
 
