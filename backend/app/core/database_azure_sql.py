@@ -434,16 +434,19 @@ class AzureSQLService:
     async def get_analysis(self, analysis_id: str) -> Optional[Dict]:
         """Get analysis record"""
         if self._use_mock:
-            # Reload from file to ensure we have latest data (handles multi-process scenarios)
+            # CRITICAL: Check in-memory storage FIRST (it's the source of truth immediately after save)
+            # Only reload from file if not found in memory (to handle restarts)
+            if analysis_id in AzureSQLService._mock_storage:
+                logger.debug(f"Retrieved analysis from in-memory mock storage: {analysis_id}")
+                return AzureSQLService._mock_storage[analysis_id].copy()
+            
+            # Not in memory - try loading from file (handles app restarts)
             # Try multiple times with retries in case file was just written
             for retry in range(3):
                 self._load_mock_storage()
                 # Get from in-memory mock storage (use class variable to ensure persistence)
                 if analysis_id in AzureSQLService._mock_storage:
-                    if retry > 0:
-                        logger.info(f"Retrieved analysis from mock storage: {analysis_id} (after {retry + 1} attempts)")
-                    else:
-                        logger.debug(f"Retrieved analysis from mock storage: {analysis_id}")
+                    logger.info(f"Retrieved analysis from file after reload: {analysis_id} (attempt {retry + 1})")
                     return AzureSQLService._mock_storage[analysis_id].copy()
                 
                 if retry < 2:  # Don't sleep on last attempt
@@ -451,9 +454,17 @@ class AzureSQLService:
             
             logger.warning(f"Analysis not found in mock storage after {3} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
             # Check if file exists but wasn't loaded
-            if os.path.exists(AzureSQLService._mock_storage_file):
-                file_size = os.path.getsize(AzureSQLService._mock_storage_file)
+            file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
                 logger.warning(f"Storage file exists ({file_size} bytes) but analysis not found. File may be corrupted or have permission issues.")
+                # Try to read and parse the file directly for debugging
+                try:
+                    with open(file_path, 'r') as f:
+                        file_data = json.load(f)
+                        logger.warning(f"File contains {len(file_data)} analyses. IDs: {list(file_data.keys())}")
+                except Exception as e:
+                    logger.error(f"Could not read storage file for debugging: {e}")
             return None
         
         try:
