@@ -33,9 +33,8 @@ COPY main_integrated.py .
 # Create directory first, then copy files individually to avoid ACR layer issues
 RUN mkdir -p ./frontend/dist
 COPY frontend-dist/index.html ./frontend/dist/index.html
-# Copy assets directory if it exists (use wildcard to handle missing directory gracefully)
-COPY frontend-dist/assets* ./frontend/dist/ 2>/dev/null || true
-RUN if [ -d "frontend-dist/assets" ]; then cp -r frontend-dist/assets ./frontend/dist/; fi
+# Copy assets directory (must exist - frontend build should create it)
+COPY frontend-dist/assets ./frontend/dist/assets
 
 # Expose port
 EXPOSE 8000
