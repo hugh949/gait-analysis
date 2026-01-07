@@ -109,47 +109,65 @@ class AzureSQLService:
     
     def _save_mock_storage(self):
         """Save mock storage to file with file locking"""
+        logger.info(f"SAVE: Starting save operation for {len(AzureSQLService._mock_storage)} analyses to {AzureSQLService._mock_storage_file}")
         try:
             # Ensure directory exists
             storage_dir = os.path.dirname(AzureSQLService._mock_storage_file)
             if storage_dir and storage_dir != '/':
                 try:
                     os.makedirs(storage_dir, exist_ok=True)
+                    logger.debug(f"SAVE: Directory {storage_dir} exists or created")
                 except Exception as e:
-                    logger.warning(f"Could not create directory {storage_dir}: {e}")
+                    logger.warning(f"SAVE: Could not create directory {storage_dir}: {e}")
             
             # Use atomic write with file locking (if available)
             temp_file = AzureSQLService._mock_storage_file + '.tmp'
-            logger.debug(f"Attempting to save {len(AzureSQLService._mock_storage)} analyses to {temp_file}")
+            logger.info(f"SAVE: Attempting to save {len(AzureSQLService._mock_storage)} analyses to {temp_file}")
+            
+            # Check if we can write to the directory
+            try:
+                test_file = os.path.join(storage_dir if storage_dir else '/tmp', '.write_test')
+                with open(test_file, 'w') as tf:
+                    tf.write('test')
+                os.unlink(test_file)
+                logger.debug(f"SAVE: Write test successful in {storage_dir if storage_dir else '/tmp'}")
+            except Exception as e:
+                logger.error(f"SAVE: Cannot write to directory {storage_dir if storage_dir else '/tmp'}: {e}")
             
             with open(temp_file, 'w') as f:
+                logger.debug(f"SAVE: Opened temp file {temp_file} for writing")
                 if HAS_FCNTL:
                     try:
                         fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock for writing
                         json.dump(AzureSQLService._mock_storage, f, indent=2)
                         f.flush()
                         os.fsync(f.fileno())  # Force write to disk
+                        logger.debug(f"SAVE: Wrote data with file locking")
                     finally:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 else:
                     json.dump(AzureSQLService._mock_storage, f, indent=2)
                     f.flush()
                     os.fsync(f.fileno())
+                    logger.debug(f"SAVE: Wrote data without file locking")
             
             # Atomic rename
+            logger.debug(f"SAVE: Attempting atomic rename from {temp_file} to {AzureSQLService._mock_storage_file}")
             os.replace(temp_file, AzureSQLService._mock_storage_file)
-            logger.info(f"Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}. IDs: {list(AzureSQLService._mock_storage.keys())}")
+            logger.info(f"SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}. IDs: {list(AzureSQLService._mock_storage.keys())}")
             
             # Verify file was created
             if os.path.exists(AzureSQLService._mock_storage_file):
                 file_size = os.path.getsize(AzureSQLService._mock_storage_file)
-                logger.debug(f"Storage file verified: {AzureSQLService._mock_storage_file} ({file_size} bytes)")
+                logger.info(f"SAVE: Storage file verified: {AzureSQLService._mock_storage_file} ({file_size} bytes)")
             else:
-                logger.error(f"Storage file was not created: {AzureSQLService._mock_storage_file}")
+                logger.error(f"SAVE: Storage file was not created after rename: {AzureSQLService._mock_storage_file}")
         except PermissionError as e:
-            logger.error(f"Permission denied saving mock storage to {AzureSQLService._mock_storage_file}: {e}")
+            logger.error(f"SAVE: Permission denied saving mock storage to {AzureSQLService._mock_storage_file}: {e}", exc_info=True)
+        except OSError as e:
+            logger.error(f"SAVE: OS error saving mock storage: {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"Failed to save mock storage to file: {e}", exc_info=True)
+            logger.error(f"SAVE: Failed to save mock storage to file: {e}", exc_info=True)
     
     def _init_schema(self):
         """Initialize database schema"""
