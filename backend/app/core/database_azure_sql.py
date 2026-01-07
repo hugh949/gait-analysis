@@ -267,6 +267,49 @@ class AzureSQLService:
         except Exception as e:
             logger.error(f"Failed to get analysis: {e}")
             return None
+    
+    async def list_analyses(self, limit: int = 50) -> List[Dict]:
+        """List all analyses, ordered by most recent first"""
+        if self._use_mock:
+            # Get all from in-memory mock storage
+            analyses = list(self._mock_storage.values())
+            # Sort by created_at descending
+            analyses.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            return analyses[:limit]
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, patient_id, filename, video_url, status, 
+                           current_step, step_progress, step_message, 
+                           metrics, created_at, updated_at
+                    FROM analyses
+                    ORDER BY created_at DESC
+                    OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                """, (limit,))
+                
+                rows = cursor.fetchall()
+                analyses = []
+                for row in rows:
+                    metrics = json.loads(row[8]) if row[8] else {}
+                    analyses.append({
+                        'id': row[0],
+                        'patient_id': row[1],
+                        'filename': row[2],
+                        'video_url': row[3],
+                        'status': row[4],
+                        'current_step': row[5],
+                        'step_progress': row[6],
+                        'step_message': row[7],
+                        'metrics': metrics,
+                        'created_at': str(row[9]),
+                        'updated_at': str(row[10])
+                    })
+                return analyses
+        except Exception as e:
+            logger.error(f"Failed to list analyses: {e}")
+            return []
 
 
 

@@ -451,21 +451,15 @@ export default function AnalysisUpload() {
         {status === 'completed' && analysisId && (
           <div className="completion-message">
             <h3>✅ Analysis Complete!</h3>
-            <p>Your gait analysis is ready. View the reports tailored for different audiences:</p>
+            <p>Your gait analysis is ready. Click the button below to view your comprehensive report.</p>
             <div className="dashboard-links">
-              <p><strong>Analysis ID:</strong> <code>{analysisId}</code></p>
-              <div className="dashboard-buttons">
-                <button onClick={() => navigate(`/medical?analysisId=${analysisId}`)} className="btn btn-secondary">
-                  View Medical Report
-                </button>
-                <button onClick={() => navigate(`/caregiver?analysisId=${analysisId}`)} className="btn btn-secondary">
-                  View Caregiver Report
-                </button>
-                <button onClick={() => navigate(`/older-adult?analysisId=${analysisId}`)} className="btn btn-secondary">
-                  View Your Report
-                </button>
-              </div>
-              <p className="note">You can use the Analysis ID to access these reports later.</p>
+              <button 
+                onClick={() => navigate(`/report/${analysisId}`)} 
+                className="btn btn-primary"
+                style={{ marginTop: '1rem', fontSize: '1.1rem', padding: '0.75rem 2rem' }}
+              >
+                View Report
+              </button>
             </div>
           </div>
         )}

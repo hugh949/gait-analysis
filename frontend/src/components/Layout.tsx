@@ -4,11 +4,11 @@ import './Layout.css'
 
 interface LayoutProps {
   children: ReactNode
-  selectedAudience: string
-  setSelectedAudience: (audience: string) => void
+  selectedAudience?: string
+  setSelectedAudience?: (audience: string) => void
 }
 
-export default function Layout({ children, setSelectedAudience }: LayoutProps) {
+export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
 
   return (
@@ -18,38 +18,16 @@ export default function Layout({ children, setSelectedAudience }: LayoutProps) {
           <h1>Gait Analysis Platform</h1>
           <nav className="nav">
             <Link 
-              to="/" 
-              className={location.pathname === '/' ? 'active' : ''}
-              onClick={() => setSelectedAudience('home')}
-            >
-              Home
-            </Link>
-            <Link 
               to="/upload" 
               className={location.pathname === '/upload' ? 'active' : ''}
             >
               Upload Video
             </Link>
             <Link 
-              to="/medical" 
-              className={location.pathname === '/medical' ? 'active' : ''}
-              onClick={() => setSelectedAudience('medical')}
+              to="/view-gait" 
+              className={location.pathname === '/view-gait' ? 'active' : ''}
             >
-              Medical
-            </Link>
-            <Link 
-              to="/caregiver" 
-              className={location.pathname === '/caregiver' ? 'active' : ''}
-              onClick={() => setSelectedAudience('caregiver')}
-            >
-              Caregiver
-            </Link>
-            <Link 
-              to="/older-adult" 
-              className={location.pathname === '/older-adult' ? 'active' : ''}
-              onClick={() => setSelectedAudience('older-adult')}
-            >
-              For You
+              View Gait
             </Link>
           </nav>
         </div>

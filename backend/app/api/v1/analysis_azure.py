@@ -221,6 +221,17 @@ async def process_analysis_azure(
         })
 
 
+@router.get("/list")
+async def list_analyses(limit: int = 50):
+    """List all analyses, ordered by most recent first"""
+    try:
+        analyses = await db_service.list_analyses(limit=limit)
+        return {"analyses": analyses}
+    except Exception as e:
+        logger.error(f"Error listing analyses: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving analyses: {str(e)}")
+
+
 @router.get("/{analysis_id}")
 async def get_analysis(analysis_id: str):
     """Get analysis status and results"""

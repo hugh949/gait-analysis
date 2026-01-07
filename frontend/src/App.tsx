@@ -1,41 +1,27 @@
-import { useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
-import Home from './pages/Home'
 import AnalysisUpload from './pages/AnalysisUpload'
-import MedicalDashboard from './pages/MedicalDashboard'
-import CaregiverDashboard from './pages/CaregiverDashboard'
-import OlderAdultDashboard from './pages/OlderAdultDashboard'
+import ViewGait from './pages/ViewGait'
+import Report from './pages/Report'
 
 function App() {
-  const [selectedAudience, setSelectedAudience] = useState('home')
-
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={
-          <Layout selectedAudience={selectedAudience} setSelectedAudience={setSelectedAudience}>
-            <Home />
-          </Layout>
-        } />
+        <Route path="/" element={<Navigate to="/upload" replace />} />
         <Route path="/upload" element={
-          <Layout selectedAudience={selectedAudience} setSelectedAudience={setSelectedAudience}>
+          <Layout>
             <AnalysisUpload />
           </Layout>
         } />
-        <Route path="/medical" element={
-          <Layout selectedAudience={selectedAudience} setSelectedAudience={setSelectedAudience}>
-            <MedicalDashboard />
+        <Route path="/view-gait" element={
+          <Layout>
+            <ViewGait />
           </Layout>
         } />
-        <Route path="/caregiver" element={
-          <Layout selectedAudience={selectedAudience} setSelectedAudience={setSelectedAudience}>
-            <CaregiverDashboard />
-          </Layout>
-        } />
-        <Route path="/older-adult" element={
-          <Layout selectedAudience={selectedAudience} setSelectedAudience={setSelectedAudience}>
-            <OlderAdultDashboard />
+        <Route path="/report/:analysisId" element={
+          <Layout>
+            <Report />
           </Layout>
         } />
       </Routes>
