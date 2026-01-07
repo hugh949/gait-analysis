@@ -40,16 +40,6 @@ def get_gait_analysis_service():
 db_service = AzureSQLService()
 
 
-@router.get("/health")
-async def health_check():
-    """Health check endpoint for API"""
-    return {
-        "status": "healthy",
-        "service": "Gait Analysis API",
-        "version": "3.0.0"
-    }
-
-
 class AnalysisRequest(BaseModel):
     """Analysis request model"""
     patient_id: Optional[str] = None
