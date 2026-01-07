@@ -197,14 +197,40 @@ class AzureSQLService:
             # Atomic rename
             logger.debug(f"SAVE: Attempting atomic rename from {temp_file} to {AzureSQLService._mock_storage_file}")
             os.replace(temp_file, AzureSQLService._mock_storage_file)
+            
+            # Force filesystem sync to ensure rename is visible immediately
+            try:
+                import os
+                # Sync the directory to ensure the rename is visible
+                dir_fd = os.open(storage_dir, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)  # Sync directory metadata
+                finally:
+                    os.close(dir_fd)
+            except Exception as e:
+                logger.debug(f"SAVE: Could not sync directory (non-critical): {e}")
+            
             logger.info(f"SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}. IDs: {list(AzureSQLService._mock_storage.keys())}")
             
-            # Verify file was created
-            if os.path.exists(AzureSQLService._mock_storage_file):
-                file_size = os.path.getsize(AzureSQLService._mock_storage_file)
-                logger.info(f"SAVE: Storage file verified: {AzureSQLService._mock_storage_file} ({file_size} bytes)")
-            else:
-                logger.error(f"SAVE: Storage file was not created after rename: {AzureSQLService._mock_storage_file}")
+            # Verify file was created - with retry in case of filesystem delay
+            file_verified = False
+            for verify_attempt in range(3):
+                if os.path.exists(AzureSQLService._mock_storage_file):
+                    file_size = os.path.getsize(AzureSQLService._mock_storage_file)
+                    logger.info(f"SAVE: Storage file verified: {AzureSQLService._mock_storage_file} ({file_size} bytes) (attempt {verify_attempt + 1})")
+                    file_verified = True
+                    break
+                if verify_attempt < 2:
+                    time.sleep(0.1)
+            
+            if not file_verified:
+                logger.error(f"SAVE: Storage file was not found after rename (even after retries): {AzureSQLService._mock_storage_file}")
+                # List directory contents for debugging
+                try:
+                    dir_contents = os.listdir(storage_dir)
+                    logger.error(f"SAVE: Directory contents: {dir_contents}")
+                except Exception as e:
+                    logger.error(f"SAVE: Could not list directory: {e}")
         except PermissionError as e:
             logger.error(f"SAVE: Permission denied saving mock storage to {AzureSQLService._mock_storage_file}: {e}", exc_info=True)
         except OSError as e:
