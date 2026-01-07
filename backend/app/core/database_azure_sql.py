@@ -85,6 +85,15 @@ class AzureSQLService:
     
     def _load_mock_storage(self):
         """Load mock storage from file if it exists, with retry logic for multi-worker scenarios"""
+        # Ensure directory exists before trying to load
+        storage_dir = os.path.dirname(AzureSQLService._mock_storage_file)
+        if storage_dir and storage_dir != '/':
+            try:
+                os.makedirs(storage_dir, exist_ok=True)
+                logger.debug(f"LOAD: Ensured directory exists: {storage_dir}")
+            except Exception as e:
+                logger.warning(f"LOAD: Could not create directory {storage_dir}: {e}")
+        
         max_retries = 3
         retry_delay = 0.1
         
