@@ -211,6 +211,15 @@ class GaitAnalysisService:
         # Sample frames (process every Nth frame for efficiency)
         frame_skip = max(1, int(video_fps / 10))  # Process ~10 frames per second
         
+        # Progress tracking for async callback
+        progress_updates = []
+        progress_lock = threading.Lock()
+        
+        def sync_progress_callback(progress: int, message: str):
+            """Synchronous progress callback that stores updates for async processing"""
+            with progress_lock:
+                progress_updates.append((progress, message))
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -219,6 +228,10 @@ class GaitAnalysisService:
             # Skip frames for efficiency
             if frame_count % frame_skip != 0:
                 frame_count += 1
+                # Still update progress for skipped frames
+                if progress_callback and frame_count % 10 == 0:
+                    progress = min(50, int((frame_count / total_frames) * 50))
+                    sync_progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
                 continue
             
             timestamp = frame_count / video_fps
@@ -233,8 +246,9 @@ class GaitAnalysisService:
                 if results.pose_landmarks:
                     # Extract 2D keypoints
                     keypoints_2d = self._extract_2d_keypoints(results.pose_landmarks, width, height)
-                    frames_2d_keypoints.append(keypoints_2d)
-                    frame_timestamps.append(timestamp)
+                    if keypoints_2d:  # Only add if keypoints were extracted
+                        frames_2d_keypoints.append(keypoints_2d)
+                        frame_timestamps.append(timestamp)
             else:
                 # Fallback: Use basic motion detection without pose estimation
                 # This allows analysis to work even without MediaPipe
@@ -242,20 +256,20 @@ class GaitAnalysisService:
                     # Create dummy keypoints with simulated walking motion
                     # Pass frame_count to create variation (walking cycle)
                     dummy_keypoints = self._create_dummy_keypoints(width, height, frame_count)
-                    frames_2d_keypoints.append(dummy_keypoints)
-                    frame_timestamps.append(timestamp)
+                    if dummy_keypoints:  # Ensure keypoints were created
+                        frames_2d_keypoints.append(dummy_keypoints)
+                        frame_timestamps.append(timestamp)
             
             frame_count += 1
             
-            # Progress update - update more frequently (every 5 frames or every processed frame)
+            # Progress update - update more frequently (every 5 processed frames or every 10 total frames)
             if progress_callback:
-                # Update progress based on total frames processed, not just frame_count
-                # Account for frame skipping
                 processed_frames = len(frames_2d_keypoints)
-                if processed_frames % 5 == 0 or frame_count % 20 == 0:
+                # Update more frequently: every 5 processed frames OR every 10 total frames
+                if processed_frames % 5 == 0 or frame_count % 10 == 0:
                     # Pose estimation phase: 0-50% of total progress
                     progress = min(50, int((frame_count / total_frames) * 50))
-                    progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
+                    sync_progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
         
         cap.release()
         
@@ -267,14 +281,14 @@ class GaitAnalysisService:
         
         # Progress: Moving to 3D lifting phase
         if progress_callback:
-            progress_callback(55, "Lifting 2D keypoints to 3D...")
+            sync_progress_callback(55, "Lifting 2D keypoints to 3D...")
         
         # Lift 2D keypoints to 3D
         frames_3d_keypoints = self._lift_to_3d(frames_2d_keypoints, view_type)
         
         # Progress: Moving to metrics calculation
         if progress_callback:
-            progress_callback(75, "Calculating gait parameters...")
+            sync_progress_callback(75, "Calculating gait parameters...")
         
         # Calculate gait metrics
         metrics = self._calculate_gait_metrics(
@@ -286,7 +300,7 @@ class GaitAnalysisService:
         
         # Progress: Finalizing
         if progress_callback:
-            progress_callback(95, "Finalizing analysis results...")
+            sync_progress_callback(95, "Finalizing analysis results...")
         
         result = {
             "status": "completed",
@@ -300,7 +314,7 @@ class GaitAnalysisService:
         
         # Progress: Complete
         if progress_callback:
-            progress_callback(100, "Analysis complete!")
+            sync_progress_callback(100, "Analysis complete!")
         
         return result
     
