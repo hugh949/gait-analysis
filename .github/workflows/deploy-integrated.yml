@@ -111,6 +111,37 @@ jobs:
         fi
         echo "✅ Frontend build verified"
         
+    - name: Verify cleaned code before build
+      run: |
+        echo "🔍 Verifying cleaned code structure..."
+        cd backend
+        
+        # Verify old files are deleted
+        if [ -f "app/api/v1/analysis.py" ]; then
+          echo "❌ Error: Old analysis.py still exists!"
+          exit 1
+        fi
+        if [ -f "app/api/v1/health.py" ]; then
+          echo "❌ Error: Old health.py still exists!"
+          exit 1
+        fi
+        if [ -f "app/api/v1/reports.py" ]; then
+          echo "❌ Error: Old reports.py still exists!"
+          exit 1
+        fi
+        
+        # Verify __init__.py doesn't import old files
+        if grep -q "from app.api.v1 import analysis, health, reports" app/api/v1/__init__.py; then
+          echo "❌ Error: __init__.py still imports deleted files!"
+          exit 1
+        fi
+        
+        # Verify only Azure-native files exist
+        echo "✅ Verified: Only Azure-native files present"
+        echo "   - analysis_azure.py exists"
+        echo "   - Old files deleted"
+        echo "   - __init__.py is clean"
+        
     - name: Build and push Docker image to ACR
       run: |
         echo "🐳 Building Docker image (Frontend + Backend)..."
@@ -122,13 +153,14 @@ jobs:
         ls -la frontend-dist/index.html || exit 1
         ls -la main_integrated.py || exit 1
         
-        # Build image using ACR Tasks
-        echo "🔨 Starting Docker build..."
+        # Build image using ACR Tasks (force rebuild with --no-cache)
+        echo "🔨 Starting Docker build (no cache to ensure clean build)..."
         az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
           --file Dockerfile.integrated \
           . \
+          --no-cache \
           --no-logs || exit 1
           
         echo "✅ Docker image built and pushed to ACR"
