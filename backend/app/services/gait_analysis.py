@@ -99,23 +99,13 @@ class GaitAnalysisService:
         
         if MEDIAPIPE_AVAILABLE and python is not None and PoseLandmarker is not None:
             try:
-                # Initialize MediaPipe 0.10.x PoseLandmarker with high accuracy settings
-                # MediaPipe 0.10.x requires explicit model specification or uses bundled default
-                # Try without base_options first (uses default bundled model)
-                try:
-                    options = PoseLandmarkerOptions(
-                        running_mode=self.running_mode,
-                        min_pose_detection_confidence=0.5,
-                        min_pose_presence_confidence=0.5,
-                        min_tracking_confidence=0.5,
-                        output_segmentation_masks=False
-                    )
-                    self.pose_landmarker = PoseLandmarker.create_from_options(options)
-                    logger.info("MediaPipe 0.10.x PoseLandmarker initialized successfully (default model)")
-                except Exception as e1:
-                    # Fallback: try with explicit BaseOptions
-                    logger.debug(f"Initialization without base_options failed: {e1}, trying with BaseOptions")
+                # Initialize MediaPipe 0.10.x PoseLandmarker
+                # MediaPipe 0.10.x requires a model file - try to find bundled model or download
+                model_path = self._get_mediapipe_model_path()
+                
+                if model_path and os.path.exists(model_path):
                     base_options = python.BaseOptions(
+                        model_asset_path=model_path,
                         delegate=python.BaseOptions.Delegate.CPU
                     )
                     options = PoseLandmarkerOptions(
@@ -127,7 +117,23 @@ class GaitAnalysisService:
                         output_segmentation_masks=False
                     )
                     self.pose_landmarker = PoseLandmarker.create_from_options(options)
-                    logger.info("MediaPipe 0.10.x PoseLandmarker initialized successfully (with BaseOptions)")
+                    logger.info(f"MediaPipe 0.10.x PoseLandmarker initialized successfully with model: {model_path}")
+                else:
+                    # Try without model path (may work if bundled)
+                    logger.warning("Model file not found, attempting initialization without explicit model path")
+                    try:
+                        options = PoseLandmarkerOptions(
+                            running_mode=self.running_mode,
+                            min_pose_detection_confidence=0.5,
+                            min_pose_presence_confidence=0.5,
+                            min_tracking_confidence=0.5,
+                            output_segmentation_masks=False
+                        )
+                        self.pose_landmarker = PoseLandmarker.create_from_options(options)
+                        logger.info("MediaPipe 0.10.x PoseLandmarker initialized successfully (bundled model)")
+                    except Exception as e2:
+                        logger.error(f"Failed to initialize PoseLandmarker without model: {e2}")
+                        self.pose_landmarker = None
             except Exception as e:
                 logger.error(f"Failed to initialize MediaPipe PoseLandmarker: {e}", exc_info=True)
                 self.pose_landmarker = None
@@ -870,6 +876,32 @@ class GaitAnalysisService:
                     return tmp_file.name
                 else:
                     raise ValueError(f"Failed to download video: {response.status}")
+    
+    def _get_mediapipe_model_path(self) -> Optional[str]:
+        """Get path to MediaPipe pose landmarker model file"""
+        # Try to find bundled model in MediaPipe package
+        try:
+            import mediapipe as mp
+            import site
+            
+            # Check common MediaPipe model locations
+            possible_paths = [
+                # MediaPipe package location
+                os.path.join(os.path.dirname(mp.__file__), 'models', 'pose_landmarker.task'),
+                # Site-packages location
+                os.path.join(site.getsitepackages()[0] if site.getsitepackages() else '', 'mediapipe', 'models', 'pose_landmarker.task'),
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    logger.info(f"Found MediaPipe model at: {path}")
+                    return path
+            
+            logger.debug("MediaPipe model not found in standard locations")
+            return None
+        except Exception as e:
+            logger.debug(f"Error searching for MediaPipe model: {e}")
+            return None
     
     def cleanup(self):
         """Cleanup resources"""
