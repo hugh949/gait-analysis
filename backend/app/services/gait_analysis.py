@@ -323,10 +323,27 @@ class GaitAnalysisService:
         monitor_task = asyncio.create_task(monitor_progress())
         
         try:
-            logger.info("Waiting for video processing to complete...")
+            logger.info(f"🎬 Starting video processing for: {video_path}")
+            logger.info(f"🎬 Waiting for video processing to complete (timeout: 3600s)...")
             result = await asyncio.wait_for(process_task, timeout=3600.0)
             processing_done.set()
-            logger.info("Video processing completed successfully")
+            
+            # CRITICAL: Validate result before returning
+            if not result:
+                error_msg = "Video processing returned None - no result generated"
+                logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            # Validate that processing actually happened
+            frames_processed = result.get('frames_processed', 0)
+            total_frames = result.get('total_frames', 0)
+            
+            logger.info(f"✅ Video processing completed: {frames_processed}/{total_frames} frames processed")
+            
+            if frames_processed == 0:
+                error_msg = f"CRITICAL: Video processing completed but no frames were processed! Total frames: {total_frames}"
+                logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
             
             with progress_lock:
                 remaining_updates = progress_updates[last_update_idx[0]:]
@@ -338,12 +355,15 @@ class GaitAnalysisService:
                 await progress_callback(60, "Applying advanced signal processing...")
                 await progress_callback(80, "Calculating gait parameters...")
             
+            logger.info(f"✅ Video processing completed successfully: {frames_processed} frames processed, {len(result.get('metrics', {}))} metrics calculated")
+            
         except asyncio.TimeoutError:
-            logger.error("Video processing timed out after 60 minutes")
+            error_msg = "Video processing timed out after 60 minutes"
+            logger.error(f"❌ {error_msg}")
             processing_done.set()
-            raise ValueError("Video processing timed out")
+            raise ValueError(error_msg)
         except Exception as e:
-            logger.error(f"Error during video processing: {e}", exc_info=True)
+            logger.error(f"❌ Error during video processing: {type(e).__name__}: {e}", exc_info=True)
             processing_done.set()
             raise
         finally:
