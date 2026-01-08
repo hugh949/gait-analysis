@@ -518,21 +518,11 @@ class AzureSQLService:
             # or in a different process/thread where in-memory storage might not be synced
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)
             
-            for retry in range(8):  # Increased retries for better resilience (8 attempts)
-                # Always reload from file to get latest data
-                self._load_mock_storage()
-                
-                # Check if analysis is now in memory (after reload)
-                if analysis_id in AzureSQLService._mock_storage:
-                    if retry > 0:
-                        logger.info(f"Retrieved analysis from file after reload: {analysis_id} (attempt {retry + 1})")
-                    else:
-                        logger.debug(f"Retrieved analysis from mock storage: {analysis_id}")
-                    return AzureSQLService._mock_storage[analysis_id].copy()
-                
-                # If not found, check file directly and wait if needed
+            logger.debug(f"GET: Looking for analysis {analysis_id} in storage file: {file_path}")
+            
+            for retry in range(10):  # Increased to 10 retries for better resilience
+                # Strategy 1: Try reading file directly first (most reliable)
                 if os.path.exists(file_path):
-                    # File exists - try reading it directly to check if it has the data
                     try:
                         with open(file_path, 'r') as f:
                             if HAS_FCNTL:
@@ -544,27 +534,41 @@ class AzureSQLService:
                             else:
                                 file_data = json.load(f)
                             
-                            if isinstance(file_data, dict) and analysis_id in file_data:
-                                # Found in file but not in memory - force update
-                                logger.warning(f"Analysis found in file but not in memory cache. Updating cache and retrying...")
+                            if isinstance(file_data, dict):
+                                # Update in-memory storage from file
                                 AzureSQLService._mock_storage = file_data
-                                return file_data[analysis_id].copy()
-                    except (json.JSONDecodeError, IOError, OSError) as e:
-                        logger.debug(f"Error reading file directly (attempt {retry + 1}): {e}")
-                    
-                    if retry < 7:  # Don't sleep on last attempt
-                        # Progressive delays: 0.15s, 0.3s, 0.45s, 0.6s, 0.75s, 0.9s, 1.05s
-                        time.sleep(0.15 * (retry + 1))
-                        continue
-                else:
-                    # File doesn't exist yet - wait a bit longer for it to be created
-                    if retry < 7:
-                        # Longer delays for file creation: 0.3s, 0.6s, 0.9s, 1.2s, 1.5s, 1.8s, 2.1s
-                        time.sleep(0.3 * (retry + 1))
-                        continue
+                                
+                                if analysis_id in file_data:
+                                    logger.info(f"GET: Found analysis {analysis_id} in file (attempt {retry + 1})")
+                                    return file_data[analysis_id].copy()
+                                else:
+                                    logger.debug(f"GET: File exists but analysis {analysis_id} not found. Available IDs: {list(file_data.keys())}")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"GET: Invalid JSON in file (attempt {retry + 1}): {e}")
+                    except (IOError, OSError) as e:
+                        logger.debug(f"GET: Error reading file (attempt {retry + 1}): {e}")
+                
+                # Strategy 2: Reload from file using _load_mock_storage (which preserves in-memory if file missing)
+                self._load_mock_storage()
+                
+                # Check if analysis is now in memory (after reload)
+                if analysis_id in AzureSQLService._mock_storage:
+                    if retry > 0:
+                        logger.info(f"GET: Retrieved analysis from memory after reload: {analysis_id} (attempt {retry + 1})")
+                    else:
+                        logger.debug(f"GET: Retrieved analysis from mock storage: {analysis_id}")
+                    return AzureSQLService._mock_storage[analysis_id].copy()
+                
+                # File doesn't exist or analysis not found - wait and retry
+                if retry < 9:  # Don't sleep on last attempt
+                    # Progressive delays: 0.2s, 0.4s, 0.6s, 0.8s, 1.0s, 1.2s, 1.4s, 1.6s, 1.8s
+                    delay = 0.2 * (retry + 1)
+                    logger.debug(f"GET: Analysis {analysis_id} not found, retrying in {delay}s (attempt {retry + 1}/10)")
+                    time.sleep(delay)
+                    continue
             
             # Analysis not found after retries
-            logger.warning(f"Analysis not found in mock storage after {8} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
+            logger.warning(f"GET: Analysis not found in mock storage after {10} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
             
             # Check if file exists but wasn't loaded (for debugging)
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)
