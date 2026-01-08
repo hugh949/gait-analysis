@@ -33,14 +33,37 @@ try:
     import mediapipe as mp
     from mediapipe.tasks import python
     from mediapipe.tasks.python import vision
-    from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
+    from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode, ImageFormat
+    # Try to import Image class - it might be in different locations in different versions
+    try:
+        from mediapipe.tasks.python.vision import Image as VisionImage
+    except ImportError:
+        try:
+            from mediapipe.tasks.python.core.vision import Image as VisionImage
+        except ImportError:
+            try:
+                VisionImage = vision.Image
+            except AttributeError:
+                # Last resort: try mp.Image
+                try:
+                    VisionImage = mp.Image
+                except AttributeError:
+                    VisionImage = None
+                    logger.warning("Could not import MediaPipe Image class - will use alternative method")
+    
     MEDIAPIPE_AVAILABLE = True
     logger.info(f"MediaPipe 0.10.x imported successfully with tasks API (version: {getattr(mp, '__version__', 'unknown')})")
+    if VisionImage:
+        logger.info(f"MediaPipe Image class available: {VisionImage}")
+    else:
+        logger.warning("MediaPipe Image class not found - will use numpy array directly")
 except ImportError as e:
     MEDIAPIPE_AVAILABLE = False
     mp = None
     python = None
     vision = None
+    VisionImage = None
+    ImageFormat = None
     PoseLandmarker = None
     PoseLandmarkerOptions = None
     RunningMode = None
@@ -50,6 +73,8 @@ except Exception as e:
     mp = None
     python = None
     vision = None
+    VisionImage = None
+    ImageFormat = None
     PoseLandmarker = None
     PoseLandmarkerOptions = None
     RunningMode = None
