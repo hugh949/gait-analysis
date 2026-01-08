@@ -84,8 +84,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Start the integrated application
 # HIGH AVAILABILITY: Use multiple workers for better concurrency and availability
-# Workers are set via environment variable WEBSITES_WORKER_PROCESSES (default: 4)
+# Workers are set via environment variable (default: 4)
 # This allows Azure to scale workers based on load
 # Note: For file-based mock storage, we use file locking and merge strategies to handle multi-worker scenarios
-CMD ["uvicorn", "main_integrated:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "600", "--workers", "${WEBSITES_WORKER_PROCESSES:-4}"]
+# Using shell form to allow environment variable substitution
+CMD uvicorn main_integrated:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 600 --workers ${WEBSITES_WORKER_PROCESSES:-4}
 
