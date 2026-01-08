@@ -65,7 +65,10 @@ def initialize_services():
         logger.info("✓ AzureSQLService initialized")
     except Exception as e:
         logger.error(f"Failed to initialize AzureSQLService: {e}", exc_info=True)
-        raise  # Database is critical, fail if it can't be initialized
+        # Don't raise - allow app to start, database will be None and handled gracefully
+        # This prevents the entire app from failing to start if database has issues
+        db_service = None
+        logger.warning("Database service unavailable - app will continue but database operations will fail")
 
 # Initialize services at module load
 # CRITICAL: Don't raise on failure - allow app to start even if services fail
