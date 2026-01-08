@@ -54,7 +54,7 @@ def initialize_services():
         storage_service = None
     
     try:
-vision_service = AzureVisionService()
+        vision_service = AzureVisionService()
         logger.info("✓ AzureVisionService initialized")
     except Exception as e:
         logger.error(f"Failed to initialize AzureVisionService: {e}", exc_info=True)
