@@ -182,9 +182,9 @@ class AzureSQLService:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
                 else:
-                    logger.warning(f"LOAD: Failed to load mock storage after {max_retries} attempts: {e}")
-                    if not AzureSQLService._mock_storage:
-                        AzureSQLService._mock_storage = {}
+                    logger.warning(f"LOAD: File unavailable after {max_retries} attempts: {e}. Using existing in-memory storage if available.")
+                    # CRITICAL: Don't clear in-memory storage - preserve it
+                    logger.info(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory")
                     return
             except Exception as e:
                 logger.warning(f"LOAD: Unexpected error loading mock storage (attempt {attempt + 1}): {e}")
