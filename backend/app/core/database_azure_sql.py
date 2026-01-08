@@ -583,6 +583,8 @@ class AzureSQLService:
     async def get_analysis(self, analysis_id: str) -> Optional[Dict]:
         """
         Get analysis record with ROBUST multi-worker support.
+        CRITICAL: This method ALWAYS checks in-memory storage FIRST, then file.
+        In-memory storage is the source of truth during active processing.
         
         CRITICAL ARCHITECTURE CHANGE: File-first approach for multi-worker reliability.
         In a multi-worker environment (Uvicorn with multiple workers), in-memory storage
@@ -600,12 +602,17 @@ class AzureSQLService:
                 file_size = os.path.getsize(file_path)
                 logger.info(f"🔍 GET: File size: {file_size} bytes")
             
-            # CRITICAL: Multi-worker architecture - ALWAYS read from file first
-            # In-memory cache is NOT reliable across workers, so file is source of truth
-            # We'll update in-memory cache after reading from file for performance
+            # CRITICAL: Check in-memory storage FIRST (fastest, works for same-worker requests)
+            # In-memory is the source of truth during active processing in the same worker
+            if analysis_id in AzureSQLService._mock_storage:
+                logger.info(f"GET: Found analysis {analysis_id} in in-memory storage (fast path)")
+                return AzureSQLService._mock_storage[analysis_id].copy()
+            
+            # Strategy 2: Read from file (for cross-worker access or after restart)
+            # Multi-worker architecture - file is source of truth across workers
             max_retries = 20  # Increased to 20 retries for better resilience
             for retry in range(max_retries):
-                # Strategy 1: ALWAYS read from file first (most reliable for cross-worker access)
+                # Strategy 1: Read from file (most reliable for cross-worker access)
                 if os.path.exists(file_path):
                     try:
                         with open(file_path, 'r') as f:
@@ -635,13 +642,7 @@ class AzureSQLService:
                     except (IOError, OSError) as e:
                         logger.debug(f"GET: Error reading file (attempt {retry + 1}): {e}")
                 
-                # Strategy 2: Check in-memory cache as fallback (only if file doesn't exist yet)
-                # This helps if file hasn't been created yet but we have it in memory
-                if analysis_id in AzureSQLService._mock_storage:
-                    logger.debug(f"GET: Found analysis {analysis_id} in in-memory cache (file not found yet, attempt {retry + 1})")
-                    return AzureSQLService._mock_storage[analysis_id].copy()
-                
-                # Strategy 3: Reload from file using _load_mock_storage (which preserves in-memory if file missing)
+                # Strategy 2: Reload from file using _load_mock_storage (which preserves in-memory if file missing)
                 self._load_mock_storage()
                 
                 # Check if analysis is now in memory (after reload)
