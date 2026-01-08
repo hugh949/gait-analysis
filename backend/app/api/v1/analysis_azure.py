@@ -741,7 +741,7 @@ async def process_analysis_azure(
                     try:
                         # CRITICAL: Always verify analysis exists and update it
                         # This prevents the analysis from disappearing during long processing
-                        logger.debug(f"[{request_id}] 🔄 Processing heartbeat #{heartbeat_count} - checking analysis {analysis_id}")
+                        logger.info(f"[{request_id}] 🔄 Processing heartbeat #{heartbeat_count} - checking analysis {analysis_id}")
                         current_analysis = await db_service.get_analysis(analysis_id)
                         
                         if current_analysis:
@@ -756,6 +756,8 @@ async def process_analysis_azure(
                             last_known_progress['progress'] = progress
                             last_known_progress['message'] = message
                             
+                            logger.info(f"[{request_id}] 🔄 Processing heartbeat: Analysis {analysis_id} found - updating (status: {current_analysis.get('status')}, step: {step}, progress: {progress}%)")
+                            
                             # Force update to keep analysis alive (remove heartbeat suffix to avoid clutter)
                             await db_service.update_analysis(analysis_id, {
                                 'status': 'processing',
@@ -764,10 +766,7 @@ async def process_analysis_azure(
                                 'step_message': message  # Keep original message
                             })
                             
-                            if heartbeat_count % 10 == 0:  # Log every 30-50 seconds
-                                logger.info(f"[{request_id}] ✅ Processing heartbeat: Analysis {analysis_id} is alive (heartbeat #{heartbeat_count}, {step} {progress}%)")
-                            else:
-                                logger.debug(f"[{request_id}] 🔄 Processing heartbeat: Analysis {analysis_id} is alive (heartbeat #{heartbeat_count}, {step} {progress}%)")
+                            logger.info(f"[{request_id}] ✅ Processing heartbeat: Analysis {analysis_id} updated successfully (heartbeat #{heartbeat_count}, {step} {progress}%)")
                         else:
                             logger.warning(f"[{request_id}] Processing heartbeat: Analysis {analysis_id} not found - recreating (heartbeat #{heartbeat_count})")
                             # CRITICAL: Recreate with last known progress

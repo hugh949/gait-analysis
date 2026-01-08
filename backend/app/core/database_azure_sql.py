@@ -593,7 +593,12 @@ class AzureSQLService:
         if self._use_mock:
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)
             
-            logger.debug(f"GET: Looking for analysis {analysis_id} in storage file: {file_path}")
+            logger.info(f"🔍 GET: Frontend polling for analysis {analysis_id} - checking storage file: {file_path}")
+            logger.info(f"🔍 GET: Current in-memory storage has {len(AzureSQLService._mock_storage)} analyses: {list(AzureSQLService._mock_storage.keys())}")
+            logger.info(f"🔍 GET: File exists: {os.path.exists(file_path)}")
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                logger.info(f"🔍 GET: File size: {file_size} bytes")
             
             # CRITICAL: Multi-worker architecture - ALWAYS read from file first
             # In-memory cache is NOT reliable across workers, so file is source of truth
