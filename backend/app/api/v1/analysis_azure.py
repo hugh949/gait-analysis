@@ -63,8 +63,8 @@ async def upload_video(
     file: UploadFile = File(...),
     patient_id: Optional[str] = None,
     view_type: str = "front",
-    reference_length_mm: Optional[float] = None,
-    fps: float = 30.0
+    reference_length_mm: Optional[str] = None,  # Accept string, convert to float
+    fps: Optional[str] = "30.0"  # Accept string, convert to float
 ):
     """
     Upload video for gait analysis using Azure native services
@@ -75,8 +75,25 @@ async def upload_video(
     3. Process video using Azure Computer Vision (background)
     4. Update results in SQL Database
     """
+    # Log request for debugging
+    logger.info(f"Upload request received - Content-Type: {request.headers.get('content-type', 'not set')}")
+    
+    # Convert string parameters to appropriate types
+    try:
+        fps_float = float(fps) if fps else 30.0
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid fps value: {fps}, using default 30.0")
+        fps_float = 30.0
+    
+    try:
+        reference_length_float = float(reference_length_mm) if reference_length_mm else None
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid reference_length_mm value: {reference_length_mm}, using None")
+        reference_length_float = None
+    
     # Validate file
-    if not file.filename:
+    if not file or not file.filename:
+        logger.error("No file provided in upload request")
         raise HTTPException(status_code=400, detail="No file provided")
     
     file_ext = Path(file.filename).suffix.lower()
@@ -159,8 +176,8 @@ async def upload_video(
             video_url,
             patient_id,
             view_type,
-            reference_length_mm,
-            fps
+            reference_length_float,
+            fps_float
         )
         
         return AnalysisResponse(

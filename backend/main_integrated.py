@@ -23,10 +23,11 @@ try:
 except ImportError:
     logger.info("Using standard logging (loguru not available)")
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import os
 
@@ -67,6 +68,24 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan
 )
+
+# Add exception handler for validation errors to log them
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log validation errors for debugging"""
+    logger.error(f"Validation error on {request.method} {request.url.path}")
+    logger.error(f"Validation errors: {exc.errors()}")
+    logger.error(f"Request URL: {request.url}")
+    logger.error(f"Request headers: {dict(request.headers)}")
+    logger.error(f"Query params: {dict(request.query_params)}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "message": "Request validation failed. Check logs for details.",
+            "path": str(request.url.path)
+        }
+    )
 
 # CORS middleware
 # For integrated app, allow same-origin requests (relative URLs)
