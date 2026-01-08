@@ -102,6 +102,18 @@ class AzureSQLService:
                 # Check if file exists - with explicit path resolution
                 file_path = os.path.abspath(AzureSQLService._mock_storage_file)
                 if os.path.exists(file_path):
+                    # Check file size first - if 0 bytes, file might be corrupted or in the middle of write
+                    file_size = os.path.getsize(file_path)
+                    if file_size == 0:
+                        logger.warning(f"LOAD: Storage file exists but is empty (0 bytes): {file_path}. Waiting for write to complete...")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay * (attempt + 1))
+                            continue
+                        else:
+                            logger.error(f"LOAD: Storage file is still empty after {max_retries} attempts. Using empty storage.")
+                            AzureSQLService._mock_storage = {}
+                            return
+                    
                     # Use file locking to prevent race conditions (if available)
                     with open(file_path, 'r') as f:
                         if HAS_FCNTL:
@@ -113,8 +125,16 @@ class AzureSQLService:
                         else:
                             data = json.load(f)
                         
+                        # Validate data is a dictionary
+                        if not isinstance(data, dict):
+                            logger.error(f"LOAD: Invalid data type in storage file (expected dict, got {type(data)}). Resetting storage.")
+                            AzureSQLService._mock_storage = {}
+                            return
+                        
                         AzureSQLService._mock_storage = data
-                        logger.info(f"LOAD: Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {file_path} (attempt {attempt + 1})")
+                        logger.info(f"LOAD: Loaded {len(AzureSQLService._mock_storage)} analyses from mock storage file: {file_path} ({file_size} bytes) (attempt {attempt + 1})")
+                        if len(AzureSQLService._mock_storage) > 0:
+                            logger.debug(f"LOAD: Analysis IDs in storage: {list(AzureSQLService._mock_storage.keys())}")
                         return  # Success - exit retry loop
                 else:
                     if attempt == 0:  # Only log on first attempt
@@ -202,8 +222,17 @@ class AzureSQLService:
                     os.fsync(f.fileno())
                     logger.debug(f"SAVE: Wrote data without file locking")
             
-            # Atomic rename
-            logger.debug(f"SAVE: Attempting atomic rename from {temp_file} to {AzureSQLService._mock_storage_file}")
+            # Atomic rename - ensure temp file exists and has content
+            if not os.path.exists(temp_file):
+                logger.error(f"SAVE: Temp file does not exist before rename: {temp_file}")
+                raise FileNotFoundError(f"Temp file not found: {temp_file}")
+            
+            temp_file_size = os.path.getsize(temp_file)
+            if temp_file_size == 0:
+                logger.error(f"SAVE: Temp file is empty (0 bytes) before rename: {temp_file}")
+                raise ValueError(f"Temp file is empty: {temp_file}")
+            
+            logger.debug(f"SAVE: Attempting atomic rename from {temp_file} ({temp_file_size} bytes) to {AzureSQLService._mock_storage_file}")
             os.replace(temp_file, AzureSQLService._mock_storage_file)
             
             # Force filesystem sync to ensure rename is visible immediately
@@ -213,10 +242,19 @@ class AzureSQLService:
                 dir_fd = os.open(storage_dir, os.O_RDONLY)
                 try:
                     os.fsync(dir_fd)  # Sync directory metadata
+                    logger.debug(f"SAVE: Directory synced successfully")
                 finally:
                     os.close(dir_fd)
             except Exception as e:
-                logger.debug(f"SAVE: Could not sync directory (non-critical): {e}")
+                logger.warning(f"SAVE: Could not sync directory (may cause visibility delay): {e}")
+            
+            # Additional sync - sync the file itself
+            try:
+                with open(AzureSQLService._mock_storage_file, 'r+') as f:
+                    os.fsync(f.fileno())
+                    logger.debug(f"SAVE: File synced successfully")
+            except Exception as e:
+                logger.warning(f"SAVE: Could not sync file (may cause visibility delay): {e}")
             
             logger.info(f"SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}. IDs: {list(AzureSQLService._mock_storage.keys())}")
             
