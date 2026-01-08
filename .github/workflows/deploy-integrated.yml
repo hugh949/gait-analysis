@@ -247,11 +247,26 @@ jobs:
         # Also tag as 'latest' for convenience
         # Build from backend directory where Dockerfile.integrated is located
         cd backend
+        
+        # Set build arguments for traceability
+        BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        GIT_COMMIT="${{ github.sha }}"
+        BUILD_VERSION="${{ github.run_number }}"
+        
+        echo "📦 Build information:"
+        echo "   Build Date: $BUILD_DATE"
+        echo "   Git Commit: $GIT_COMMIT"
+        echo "   Build Version: $BUILD_VERSION"
+        echo ""
+        
         if ! az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
           --image ${{ env.IMAGE_NAME }}:latest \
           --file Dockerfile.integrated \
+          --build-arg BUILD_DATE="$BUILD_DATE" \
+          --build-arg GIT_COMMIT="$GIT_COMMIT" \
+          --build-arg BUILD_VERSION="$BUILD_VERSION" \
           --no-cache \
           .; then
           echo ""
@@ -269,6 +284,8 @@ jobs:
         echo "✅ Docker image built and pushed to ACR"
         echo "   Image: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
         echo "   Also tagged as: ${{ env.IMAGE_NAME }}:latest"
+        echo "   Build Date: $BUILD_DATE"
+        echo "   Git Commit: $GIT_COMMIT"
         
     - name: Get ACR credentials
       id: acr-creds
@@ -311,6 +328,19 @@ jobs:
           --output none
         
         echo "✅ Container configuration updated"
+        
+        # Force container to pull new image by setting an environment variable
+        # This ensures Azure pulls the latest image even if tag is 'latest'
+        echo "🔄 Forcing container to pull new image..."
+        az webapp config appsettings set \
+          --name ${{ env.AZURE_WEBAPP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --settings \
+            DOCKER_IMAGE_TAG="${{ env.IMAGE_TAG }}" \
+            DEPLOYMENT_TIMESTAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+          --output none
+        
+        echo "✅ Image pull forced with deployment timestamp"
         
     - name: Configure App Service settings
       run: |
@@ -441,9 +471,26 @@ jobs:
           
           # Check for specific error patterns in response
           RESPONSE=$(curl -s --max-time 15 "$APP_URL/" 2>&1 || echo "")
-          if echo "$RESPONSE" | grep -q "FileResponse.*not defined"; then
-            LAST_ERROR="FileResponse import missing - deployment may not have updated"
-            echo "   ⚠️  Check $i/25... Found FileResponse error - code may not be updated"
+          ERROR_RESPONSE=$(curl -s --max-time 15 "$APP_URL/health" 2>&1 || echo "")
+          
+          # Detect common deployment errors
+          if echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "FileResponse.*not defined\|NameError.*FileResponse"; then
+            LAST_ERROR="FileResponse import missing - deployment may not have updated. Code needs to be rebuilt."
+            echo "   ❌ Check $i/25... Found FileResponse error - code may not be updated"
+            echo "   This indicates the old code is still running. The new image may not have been pulled."
+            if [ "$i" -eq 5 ]; then
+              echo "   🔄 Attempting to force container restart..."
+              az webapp restart \
+                --name ${{ env.AZURE_WEBAPP_NAME }} \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --output none
+              sleep 20
+            fi
+          elif echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "500\|Internal Server Error"; then
+            if [ -z "$LAST_ERROR" ]; then
+              LAST_ERROR="Application error detected (HTTP 500)"
+            fi
+            echo "   ⚠️  Check $i/25... Application error (HTTP $HTTP_CODE_ROOT)"
           elif [ "$HTTP_CODE_ROOT" = "200" ] || [ "$HTTP_CODE_HEALTH" = "200" ]; then
             echo ""
             echo "✅✅✅ Application is healthy!"

@@ -4,6 +4,14 @@
 
 FROM python:3.11-slim
 
+# Build arguments for traceability
+ARG BUILD_DATE
+ARG GIT_COMMIT
+ARG BUILD_VERSION
+LABEL build_date="${BUILD_DATE}" \
+      git_commit="${GIT_COMMIT}" \
+      build_version="${BUILD_VERSION}"
+
 # Set working directory
 WORKDIR /app
 
