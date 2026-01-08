@@ -145,12 +145,18 @@ class AzureSQLService:
                             logger.debug(f"LOAD: Directory contents: {dir_contents}")
                         except Exception as e:
                             logger.debug(f"LOAD: Could not list directory: {e}")
+                    # CRITICAL: Don't clear in-memory storage if file doesn't exist
+                    # The file might be temporarily unavailable, but in-memory data should persist
+                    # Only initialize empty dict if we don't have any in-memory data
                     if not AzureSQLService._mock_storage:
                         AzureSQLService._mock_storage = {}
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
                         continue
-                    return  # File doesn't exist, give up after retries
+                    # File doesn't exist after retries - but keep in-memory storage intact
+                    # This ensures data persists even if file is temporarily unavailable
+                    logger.debug(f"LOAD: File not found after {max_retries} attempts, but keeping in-memory storage ({len(AzureSQLService._mock_storage)} analyses)")
+                    return  # File doesn't exist, but in-memory storage is preserved
             except json.JSONDecodeError as e:
                 logger.error(f"LOAD: Invalid JSON in mock storage file (attempt {attempt + 1}): {e}. Resetting storage.")
                 AzureSQLService._mock_storage = {}

@@ -350,12 +350,12 @@ class GaitAnalysisService:
                 try:
                     # Convert BGR to RGB
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # Create MediaPipe Image with explicit dimensions to avoid NORM_RECT warning
-                    mp_image = mp.Image(
-                        image_format=mp.ImageFormat.SRGB,
-                        data=rgb_frame,
-                        width=width,
-                        height=height
+                    # Create MediaPipe Image - dimensions are inferred from numpy array
+                    # MediaPipe 0.10.x Image class infers width/height from the data array shape
+                    # Use vision.Image (not mp.Image) for MediaPipe 0.10.x tasks API
+                    mp_image = vision.Image(
+                        image_format=vision.ImageFormat.SRGB,
+                        data=rgb_frame
                     )
                     
                     # Process frame with error handling
