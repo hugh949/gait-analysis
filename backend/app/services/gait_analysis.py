@@ -489,8 +489,8 @@ class GaitAnalysisService:
                     try:
                         progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
                     except Exception as e:
-                    # CRITICAL: Progress callback errors must never stop processing
-                    logger.warning(f"Error calling progress_callback (non-critical): {e}")
+                        # CRITICAL: Progress callback errors must never stop processing
+                        logger.warning(f"Error calling progress_callback (non-critical): {e}")
                     # Don't re-raise - continue processing
                     # Continue processing even if progress update fails
         
