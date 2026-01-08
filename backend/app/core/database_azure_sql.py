@@ -127,8 +127,13 @@ class AzureSQLService:
                         
                         # Validate data is a dictionary
                         if not isinstance(data, dict):
-                            logger.error(f"LOAD: Invalid data type in storage file (expected dict, got {type(data)}). Resetting storage.")
-                            AzureSQLService._mock_storage = {}
+                            logger.error(f"LOAD: Invalid data type in storage file (expected dict, got {type(data)}).")
+                            # CRITICAL: Preserve in-memory storage if it exists
+                            if not AzureSQLService._mock_storage:
+                                logger.warning(f"LOAD: In-memory storage is empty, keeping it empty")
+                                AzureSQLService._mock_storage = {}
+                            else:
+                                logger.warning(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory despite invalid file data")
                             return
                         
                         AzureSQLService._mock_storage = data
@@ -158,8 +163,14 @@ class AzureSQLService:
                     logger.debug(f"LOAD: File not found after {max_retries} attempts, but keeping in-memory storage ({len(AzureSQLService._mock_storage)} analyses)")
                     return  # File doesn't exist, but in-memory storage is preserved
             except json.JSONDecodeError as e:
-                logger.error(f"LOAD: Invalid JSON in mock storage file (attempt {attempt + 1}): {e}. Resetting storage.")
-                AzureSQLService._mock_storage = {}
+                logger.error(f"LOAD: Invalid JSON in mock storage file (attempt {attempt + 1}): {e}.")
+                # CRITICAL: Don't clear in-memory storage on JSON errors - preserve existing data
+                # Only clear if in-memory storage is also empty (fresh start)
+                if not AzureSQLService._mock_storage:
+                    logger.warning(f"LOAD: In-memory storage is empty, keeping it empty despite JSON error")
+                    AzureSQLService._mock_storage = {}
+                else:
+                    logger.warning(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory despite file JSON error")
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
@@ -403,9 +414,10 @@ class AzureSQLService:
             # The in-memory storage should be the source of truth immediately after save
             if analysis_id not in AzureSQLService._mock_storage:
                 logger.error(f"CREATE: Analysis was not found in mock storage immediately after creation: {analysis_id}")
+                logger.error(f"CREATE: Available IDs in memory: {list(AzureSQLService._mock_storage.keys())}")
                 return False
             
-            logger.info(f"CREATE: Created analysis in mock storage: {analysis_id}. Total analyses: {len(AzureSQLService._mock_storage)}")
+            logger.info(f"CREATE: Created analysis in mock storage: {analysis_id}. Total analyses: {len(AzureSQLService._mock_storage)}. IDs: {list(AzureSQLService._mock_storage.keys())}")
             
             # CRITICAL: Verify file is readable and contains the analysis before returning
             # This ensures the file is fully written and synced to disk
