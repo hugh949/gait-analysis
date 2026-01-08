@@ -938,10 +938,17 @@ async def process_analysis_azure(
                                 'step_progress': mapped_progress,
                                 'step_message': message
                             })
-                                    logger.warning(f"[{request_id}] Recreated analysis after progress update failure")
-                                except Exception as recreate_error:
-                                    logger.error(f"[{request_id}] Failed to recreate analysis: {recreate_error}")
-                                # Don't raise - progress updates are non-critical
+                            logger.warning(f"[{request_id}] Recreated analysis after progress update failure")
+                            last_known_progress['step'] = step
+                            last_known_progress['progress'] = mapped_progress
+                            last_known_progress['message'] = message
+                        except Exception as recreate_error:
+                            logger.error(f"[{request_id}] Failed to recreate analysis: {recreate_error}")
+                            # Don't raise - progress updates are non-critical
+                            # But update last known progress so heartbeat can recreate it
+                            last_known_progress['step'] = step
+                            last_known_progress['progress'] = mapped_progress
+                            last_known_progress['message'] = message
             except Exception as e:
                 # CRITICAL: Catch-all to ensure progress callback never fails the process
                 logger.error(
