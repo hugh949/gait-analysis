@@ -399,11 +399,8 @@ async def upload_video(
                         pass
                 except Exception as e:
                     logger.error(f"[{request_id}] ❌ Keep-alive fatal error after {keepalive_count} heartbeats: {e}", exc_info=True)
-                    # Try to continue - log error but don't stop
-                    try:
-                        await asyncio.sleep(5)  # Wait before potentially restarting
-                    except:
-                        pass
+                    # Log the error but don't try to continue - let the outer loop handle it
+                    # The outer while True loop will continue if this exception is caught
             
             # Start immediate keep-alive task
             # CRITICAL: Create task in the event loop - it will run independently
