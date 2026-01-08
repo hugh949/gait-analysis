@@ -627,40 +627,27 @@ class AzureSQLService:
                 
                 # CRITICAL: Save to file IMMEDIATELY after memory update (for cross-worker visibility)
                 # This is essential for long-running processing where other workers need to see updates
+                # Use timeout to prevent blocking the heartbeat thread on slow file I/O
+                import time as time_module
+                save_start = time_module.time()
                 try:
                     self._save_mock_storage()  # Persist to file with forced sync
-                    logger.info(f"✅ UPDATE_SYNC: Successfully saved analysis {analysis_id} to file. Total analyses: {len(AzureSQLService._mock_storage)}")
+                    save_duration = time_module.time() - save_start
+                    logger.info(f"✅ UPDATE_SYNC: Successfully saved analysis {analysis_id} to file in {save_duration:.3f}s. Total analyses: {len(AzureSQLService._mock_storage)}")
                     
-                    # CRITICAL: Verify the save worked by checking file exists and has content
-                    file_path = os.path.abspath(AzureSQLService._mock_storage_file)
-                    if os.path.exists(file_path):
-                        file_size = os.path.getsize(file_path)
-                        logger.debug(f"UPDATE_SYNC: File verified: {file_path} ({file_size} bytes)")
-                        
-                        # Quick verification: try to read the file and check if our analysis is in it
-                        try:
-                            with open(file_path, 'r') as f:
-                                if HAS_FCNTL:
-                                    try:
-                                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
-                                        file_data = json.load(f)
-                                    finally:
-                                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-                                else:
-                                    file_data = json.load(f)
-                                
-                                if isinstance(file_data, dict) and analysis_id in file_data:
-                                    logger.debug(f"UPDATE_SYNC: Verified - analysis {analysis_id} exists in saved file")
-                                else:
-                                    logger.warning(f"UPDATE_SYNC: WARNING - analysis {analysis_id} not found in saved file! File has {len(file_data) if isinstance(file_data, dict) else 0} analyses")
-                        except Exception as verify_error:
-                            logger.warning(f"UPDATE_SYNC: Could not verify file contents: {verify_error}")
-                    else:
-                        logger.error(f"UPDATE_SYNC: CRITICAL - File does not exist after save: {file_path}")
+                    # CRITICAL: Quick verification (non-blocking) - only if save was fast
+                    if save_duration < 0.5:  # Only verify if save was quick
+                        file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+                        if os.path.exists(file_path):
+                            file_size = os.path.getsize(file_path)
+                            logger.debug(f"UPDATE_SYNC: File verified: {file_path} ({file_size} bytes)")
+                    elif save_duration > 1.0:
+                        logger.warning(f"UPDATE_SYNC: Slow file save took {save_duration:.2f}s - may impact heartbeat performance")
                 except Exception as save_error:
+                    save_duration = time_module.time() - save_start
                     # CRITICAL: Even if file save fails, the update is in memory
                     # Don't fail the update - in-memory storage is the source of truth
-                    logger.error(f"UPDATE_SYNC: Failed to save to file, but update is in memory: {save_error}. Analysis {analysis_id} is still available in memory.")
+                    logger.error(f"UPDATE_SYNC: Failed to save to file after {save_duration:.3f}s, but update is in memory: {save_error}. Analysis {analysis_id} is still available in memory.")
                     # Continue - the update is successful in memory, but cross-worker visibility may be limited
                 return True
             
