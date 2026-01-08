@@ -10,13 +10,21 @@ WORKDIR /app
 # Install system dependencies
 # - gcc, unixodbc-dev: for Azure SQL (pyodbc)
 # - libgl1, libglib2.0-0: for OpenCV
+# - libgomp1: for MediaPipe (OpenMP support)
+# - wget, curl: for MediaPipe model downloads
 # - ffmpeg: for video processing (optional but helpful)
 RUN apt-get update && apt-get install -y \
     gcc \
     unixodbc-dev \
     libgl1 \
     libglib2.0-0 \
+    libgomp1 \
+    wget \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip first (important for MediaPipe)
+RUN pip install --upgrade pip setuptools wheel
 
 # Copy requirements first (for better caching)
 # requirements.txt contains Azure SDKs + gait analysis dependencies (opencv-python, mediapipe)
@@ -26,6 +34,9 @@ COPY requirements.txt .
 # This installs: fastapi, uvicorn, azure-storage-blob, azure-cognitiveservices-vision-computervision,
 # opencv-python, mediapipe, numpy, etc.
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Verify MediaPipe installation (should have 'solutions' module)
+RUN python -c "import mediapipe as mp; assert hasattr(mp, 'solutions'), 'MediaPipe solutions module not available'; print('MediaPipe verified: solutions module available')"
 
 # Copy application code
 # Note: .dockerignore excludes old ML-based service files (perception_stack.py, etc.)
