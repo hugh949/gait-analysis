@@ -31,12 +31,25 @@ jobs:
     - name: Check if frontend changed
       id: frontend-changed
       run: |
-        if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "^frontend/"; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "✅ Frontend files changed - will rebuild"
+        # Check if frontend files changed in this commit
+        # Use HEAD^ for push events, or check changed files from workflow trigger
+        if [ "${{ github.event_name }}" = "push" ] && [ -n "${{ github.event.before }}" ]; then
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -q "^frontend/"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Frontend files changed - will rebuild"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Frontend unchanged - will use cached build if available"
+          fi
         else
-          echo "changed=false" >> $GITHUB_OUTPUT
-          echo "⏭️  Frontend unchanged - will use cached build if available"
+          # For workflow_dispatch or if before is not available, check if frontend files exist and are recent
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ Frontend detected - will rebuild (manual trigger or first run)"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "⏭️  No frontend directory - skipping frontend build"
+          fi
         fi
     
     - name: Set up Node.js
@@ -311,6 +324,8 @@ jobs:
         # Use ACR build cache for faster builds
         # Cache is automatically used for unchanged layers (system deps, pip packages, etc.)
         # This significantly speeds up builds when only code changes
+        # Enable BuildKit for cache mounts (Dockerfile uses --mount=type=cache)
+        export DOCKER_BUILDKIT=1
         if ! az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
@@ -319,7 +334,6 @@ jobs:
           --build-arg BUILD_DATE="$BUILD_DATE" \
           --build-arg GIT_COMMIT="$GIT_COMMIT" \
           --build-arg BUILD_VERSION="$BUILD_VERSION" \
-          --no-logs \
           .; then
           echo ""
           echo "❌ Docker build failed!"
