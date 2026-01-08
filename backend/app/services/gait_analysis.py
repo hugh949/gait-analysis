@@ -506,11 +506,11 @@ class GaitAnalysisService:
         # STEP 1 (continued): Apply advanced signal processing for maximum accuracy
         # CRITICAL: Wrap in try-except to ensure processing continues even if filtering fails
         try:
-        if progress_callback:
-            try:
-                progress_callback(52, "Applying error correction and outlier detection...")
-            except Exception as e:
-                logger.warning(f"Error in progress callback during error correction: {e}")
+            if progress_callback:
+                try:
+                    progress_callback(52, "Applying error correction and outlier detection...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback during error correction: {e}")
             
             logger.debug(f"Pre-filtering: {len(frames_2d_keypoints)} keypoint frames")
             
