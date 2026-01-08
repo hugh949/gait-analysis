@@ -221,14 +221,14 @@ async def upload_video(
                         details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
                     )
                 
-            tmp_file.write(chunk)
-        
-        tmp_file.close()
+                tmp_file.write(chunk)
+            
+            tmp_file.close()
             logger.info(
                 f"[{request_id}] File uploaded successfully",
                 extra={"filename": file.filename, "size": file_size, "path": tmp_path}
             )
-        except ValidationError:
+            except ValidationError:
             raise  # Re-raise validation errors
         except Exception as e:
             tmp_file.close()
