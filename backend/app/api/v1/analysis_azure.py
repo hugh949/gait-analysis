@@ -948,6 +948,9 @@ async def process_analysis_azure(
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to update progress at start: {e}")
             
+            logger.info(f"[{request_id}] 🎬 STARTING VIDEO ANALYSIS: video_path={video_path}, fps={fps}, view_type={view_type}")
+            logger.info(f"[{request_id}] 🎬 Analysis will call progress_callback during processing")
+            logger.info(f"[{request_id}] 🎬 Heartbeat task is running: {heartbeat_task and not heartbeat_task.done()}")
             analysis_result = await gait_service.analyze_video(
                 video_path,
                 fps=fps,
@@ -955,6 +958,7 @@ async def process_analysis_azure(
                 view_type=view_type,
                 progress_callback=progress_callback
             )
+            logger.info(f"[{request_id}] ✅ VIDEO ANALYSIS COMPLETE: Got result with keys: {list(analysis_result.keys()) if analysis_result else 'None'}")
             
             if not analysis_result:
                 logger.warning(
