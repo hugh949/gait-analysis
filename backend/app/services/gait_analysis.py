@@ -30,43 +30,29 @@ except ImportError:
 
 try:
     import mediapipe as mp
-    # Try multiple ways to access solutions module
-    # MediaPipe may expose solutions differently in different environments
+    # MediaPipe 0.10.x changed API from 'solutions' to 'tasks'
+    # We need version 0.9.x which has the solutions API
     try:
-        # Method 1: Direct access
+        # Try direct access to solutions (MediaPipe 0.9.x)
         _ = mp.solutions
         _ = mp.solutions.pose
         MEDIAPIPE_AVAILABLE = True
-        logger.info("MediaPipe imported successfully with solutions module")
+        logger.info(f"MediaPipe imported successfully with solutions module (version: {getattr(mp, '__version__', 'unknown')})")
     except AttributeError:
-        try:
-            # Method 2: Try importing solutions directly
-            from mediapipe import solutions
-            _ = solutions.pose
-            mp.solutions = solutions  # Make it available via mp.solutions
-            MEDIAPIPE_AVAILABLE = True
-            logger.info("MediaPipe imported successfully via direct solutions import")
-        except (ImportError, AttributeError) as e2:
-            # Method 3: Check if it's a lazy loader
-            try:
-                # Sometimes solutions is lazy-loaded
-                import mediapipe.python.solutions as solutions_module
-                mp.solutions = solutions_module
-                _ = solutions_module.pose
-                MEDIAPIPE_AVAILABLE = True
-                logger.info("MediaPipe imported successfully via python.solutions")
-            except (ImportError, AttributeError) as e3:
-                # Log detailed diagnostics
-                logger.warning(f"MediaPipe installed but 'solutions' module not available")
-                logger.debug(f"MediaPipe version: {getattr(mp, '__version__', 'unknown')}")
-                logger.debug(f"MediaPipe attributes: {[a for a in dir(mp) if not a.startswith('_')][:10]}")
-                logger.debug(f"Direct import error: {e2}, Module path error: {e3}")
-                MEDIAPIPE_AVAILABLE = False
-                mp = None
+        # MediaPipe 0.10.x has 'tasks' instead of 'solutions'
+        # Check version and provide helpful error
+        version = getattr(mp, '__version__', 'unknown')
+        if hasattr(mp, 'tasks'):
+            logger.warning(f"MediaPipe {version} uses 'tasks' API, but code requires 'solutions' API. Please use MediaPipe 0.9.x")
+        else:
+            logger.warning(f"MediaPipe {version} installed but 'solutions' module not available")
+        logger.debug(f"MediaPipe attributes: {[a for a in dir(mp) if not a.startswith('_')][:10]}")
+        MEDIAPIPE_AVAILABLE = False
+        mp = None
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
     mp = None
-    logger.warning("MediaPipe not installed - gait analysis will be limited. Install with: pip install mediapipe")
+    logger.warning("MediaPipe not installed - gait analysis will be limited. Install with: pip install mediapipe==0.9.3.0")
 except Exception as e:
     MEDIAPIPE_AVAILABLE = False
     mp = None

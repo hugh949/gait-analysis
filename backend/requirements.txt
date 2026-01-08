@@ -26,7 +26,7 @@ numpy>=1.24.0
 
 # Gait Analysis - Advanced Pose Estimation (Leg-Focused)
 opencv-python>=4.8.0
-mediapipe>=0.10.8,<0.11.0  # Pin version for compatibility
+mediapipe==0.9.3.0  # Use 0.9.x which has solutions API (0.10.x changed to tasks API)
 aiohttp>=3.9.0
 scipy>=1.11.0  # For advanced signal processing and filtering
 
