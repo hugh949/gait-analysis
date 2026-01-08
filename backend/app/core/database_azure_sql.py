@@ -292,7 +292,8 @@ class AzureSQLService:
             
             # CRITICAL: Add a small delay to ensure filesystem has time to make file visible
             # This helps with filesystem caching and ensures other processes can see the file
-            time.sleep(0.05)  # 50ms delay for filesystem to catch up
+            # Increased delay for better cross-worker visibility during long processing
+            time.sleep(0.1)  # 100ms delay for filesystem to catch up (increased from 50ms)
             
             analysis_ids = list(AzureSQLService._mock_storage.keys())
             logger.info(f"💾 SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}")
