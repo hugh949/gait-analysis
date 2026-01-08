@@ -30,16 +30,39 @@ except ImportError:
 
 try:
     import mediapipe as mp
-    # Try to access solutions to verify it's available
+    # Try multiple ways to access solutions module
+    # MediaPipe may expose solutions differently in different environments
     try:
+        # Method 1: Direct access
         _ = mp.solutions
         _ = mp.solutions.pose
         MEDIAPIPE_AVAILABLE = True
-        logger.info("MediaPipe imported successfully")
-    except AttributeError as e:
-        MEDIAPIPE_AVAILABLE = False
-        mp = None
-        logger.warning(f"MediaPipe installed but 'solutions' module not available: {e}. Check MediaPipe version (need >=0.10.0)")
+        logger.info("MediaPipe imported successfully with solutions module")
+    except AttributeError:
+        try:
+            # Method 2: Try importing solutions directly
+            from mediapipe import solutions
+            _ = solutions.pose
+            mp.solutions = solutions  # Make it available via mp.solutions
+            MEDIAPIPE_AVAILABLE = True
+            logger.info("MediaPipe imported successfully via direct solutions import")
+        except (ImportError, AttributeError) as e2:
+            # Method 3: Check if it's a lazy loader
+            try:
+                # Sometimes solutions is lazy-loaded
+                import mediapipe.python.solutions as solutions_module
+                mp.solutions = solutions_module
+                _ = solutions_module.pose
+                MEDIAPIPE_AVAILABLE = True
+                logger.info("MediaPipe imported successfully via python.solutions")
+            except (ImportError, AttributeError) as e3:
+                # Log detailed diagnostics
+                logger.warning(f"MediaPipe installed but 'solutions' module not available")
+                logger.debug(f"MediaPipe version: {getattr(mp, '__version__', 'unknown')}")
+                logger.debug(f"MediaPipe attributes: {[a for a in dir(mp) if not a.startswith('_')][:10]}")
+                logger.debug(f"Direct import error: {e2}, Module path error: {e3}")
+                MEDIAPIPE_AVAILABLE = False
+                mp = None
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
     mp = None

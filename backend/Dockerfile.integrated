@@ -12,11 +12,13 @@ WORKDIR /app
 # - libgl1, libglib2.0-0: for OpenCV
 # - libgomp1: for MediaPipe (OpenMP support)
 # - libstdc++6, libgcc-s1: for MediaPipe C++ runtime
+# - python3-dev: for MediaPipe Python bindings
 # - wget, curl: for MediaPipe model downloads
 # - ffmpeg: for video processing (optional but helpful)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    python3-dev \
     unixodbc-dev \
     libgl1 \
     libglib2.0-0 \
