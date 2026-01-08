@@ -160,9 +160,11 @@ class GaitAnalysisService:
         monitor_task = asyncio.create_task(monitor_progress())
         
         try:
-            # Wait for processing to complete
-            result = await process_task
+            logger.info("Waiting for video processing to complete...")
+            # Wait for processing to complete (with timeout protection)
+            result = await asyncio.wait_for(process_task, timeout=600.0)  # 10 minute timeout
             processing_done.set()
+            logger.info("Video processing completed successfully")
             
             # Send any remaining updates
             with progress_lock:
@@ -176,6 +178,14 @@ class GaitAnalysisService:
                 await progress_callback(60, "Lifting to 3D pose...")
                 await progress_callback(80, "Calculating gait parameters...")
             
+        except asyncio.TimeoutError:
+            logger.error("Video processing timed out after 10 minutes")
+            processing_done.set()
+            raise ValueError("Video processing timed out - video may be too long or corrupted")
+        except Exception as e:
+            logger.error(f"Error during video processing: {e}", exc_info=True)
+            processing_done.set()
+            raise
         finally:
             monitor_task.cancel()
             try:
@@ -194,13 +204,29 @@ class GaitAnalysisService:
         progress_callback: Optional[Callable] = None
     ) -> Dict:
         """Synchronous video processing"""
+        logger.info(f"_process_video_sync started: video_path={video_path}, fps={fps}, view_type={view_type}, progress_callback={progress_callback is not None}")
+        
         if not CV2_AVAILABLE:
-            raise ImportError("OpenCV (cv2) is required for video processing. Please install opencv-python.")
+            error_msg = "OpenCV (cv2) is required for video processing. Please install opencv-python."
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+        
+        # Check if video file exists
+        if not os.path.exists(video_path):
+            error_msg = f"Video file does not exist: {video_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        logger.info(f"Opening video file: {video_path} (exists: {os.path.exists(video_path)}, size: {os.path.getsize(video_path) if os.path.exists(video_path) else 'N/A'} bytes)")
         
         cap = cv2.VideoCapture(video_path)
         
         if not cap.isOpened():
-            raise ValueError(f"Could not open video: {video_path}")
+            error_msg = f"Could not open video: {video_path}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.info(f"Video file opened successfully: {video_path}")
         
         # Get video properties
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -208,7 +234,12 @@ class GaitAnalysisService:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        logger.info(f"Video: {total_frames} frames, {video_fps} fps, {width}x{height}")
+        logger.info(f"Video properties: {total_frames} frames, {video_fps} fps, {width}x{height}")
+        
+        if total_frames == 0:
+            logger.error(f"Video has 0 frames - invalid video file: {video_path}")
+            cap.release()
+            raise ValueError(f"Video file has 0 frames: {video_path}")
         
         # Extract frames and detect poses
         frames_2d_keypoints = []
@@ -222,9 +253,12 @@ class GaitAnalysisService:
         # This callback writes to the shared progress_updates list that monitor_progress reads
         # CRITICAL: Do NOT create a new local progress_updates list here!
         
+        logger.info(f"Starting frame processing: frame_skip={frame_skip}, progress_callback available={progress_callback is not None}")
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
+                logger.debug(f"End of video reached at frame {frame_count}")
                 break
             
             # Skip frames for efficiency
@@ -270,9 +304,15 @@ class GaitAnalysisService:
                 if frame_count % 5 == 0:
                     # Pose estimation phase: 0-50% of total progress
                     progress = min(50, int((frame_count / total_frames) * 50))
-                    progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
+                    try:
+                        progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
+                        if frame_count % 50 == 0:  # Log every 50 frames
+                            logger.debug(f"Progress callback: {progress}% - Processing frame {frame_count}/{total_frames}...")
+                    except Exception as e:
+                        logger.error(f"Error calling progress_callback: {e}", exc_info=True)
         
         cap.release()
+        logger.info(f"Video processing complete: processed {frame_count} frames, extracted {len(frames_2d_keypoints)} keypoint frames")
         
         if not frames_2d_keypoints:
             logger.warning("No poses detected in video")
