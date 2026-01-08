@@ -362,18 +362,17 @@ async def upload_video(
                         keepalive_count += 1
                         try:
                             # Verify and update analysis to keep it alive
-                            logger.debug(f"[{request_id}] 🔄 Keep-alive heartbeat #{keepalive_count} - checking analysis {analysis_id}")
+                            logger.info(f"[{request_id}] 🔄 Keep-alive heartbeat #{keepalive_count} - checking analysis {analysis_id}")
                             current_analysis = await db_service.get_analysis(analysis_id)
                             if current_analysis:
-                                logger.debug(f"[{request_id}] 🔄 Keep-alive: Analysis {analysis_id} found - updating to keep alive")
+                                logger.info(f"[{request_id}] 🔄 Keep-alive: Analysis {analysis_id} found - updating to keep alive (status: {current_analysis.get('status')}, step: {current_analysis.get('current_step')}, progress: {current_analysis.get('step_progress')}%)")
                                 await db_service.update_analysis(analysis_id, {
                                     'status': 'processing',
                                     'current_step': current_analysis.get('current_step', 'pose_estimation'),
                                     'step_progress': current_analysis.get('step_progress', 0),
                                     'step_message': current_analysis.get('step_message', 'Initializing analysis...')
                                 })
-                                if keepalive_count % 5 == 0:  # Log every 10 seconds
-                                    logger.info(f"[{request_id}] ✅ Keep-alive: Analysis {analysis_id} is alive (heartbeat #{keepalive_count})")
+                                logger.info(f"[{request_id}] ✅ Keep-alive: Analysis {analysis_id} updated successfully (heartbeat #{keepalive_count})")
                             else:
                                 logger.warning(f"[{request_id}] ⚠️ Keep-alive: Analysis {analysis_id} NOT FOUND - recreating (heartbeat #{keepalive_count})")
                                 await db_service.create_analysis({
