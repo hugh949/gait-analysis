@@ -207,12 +207,6 @@ jobs:
         # Verify only Azure-native files exist
         echo "✅ Code structure verified (warnings are non-blocking)"
         
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      with:
-        driver-opts: |
-          image=moby/buildkit:latest
-    
     - name: Build and push Docker image to ACR
       run: |
         echo "🐳 Building Docker image (Frontend + Backend)..."
@@ -322,10 +316,9 @@ jobs:
         echo ""
         
         # Use ACR build cache for faster builds
-        # Cache is automatically used for unchanged layers (system deps, pip packages, etc.)
+        # ACR automatically caches Docker layers - unchanged layers are reused
         # This significantly speeds up builds when only code changes
-        # Enable BuildKit for cache mounts (Dockerfile uses --mount=type=cache)
-        export DOCKER_BUILDKIT=1
+        # System deps and pip packages are cached if requirements.txt unchanged
         if ! az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
