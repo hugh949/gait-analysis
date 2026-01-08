@@ -458,7 +458,7 @@ class AzureSQLService:
                                 break
                         elif verify_retry < 9:
                             logger.debug(f"CREATE: Analysis not yet in file, retrying... (attempt {verify_retry + 1})")
-                            time.sleep(0.1)
+                            time.sleep(0.2)  # Increased to 200ms to allow filesystem sync
                             continue
                 except (json.JSONDecodeError, IOError, OSError) as e:
                     if verify_retry < 9:
