@@ -281,6 +281,9 @@ jobs:
         echo "   Build Version: $BUILD_VERSION"
         echo ""
         
+        # Note: az acr build doesn't support --no-cache flag
+        # ACR builds use fresh context by default, and we use unique image tags (git SHA)
+        # to ensure new images are always pulled
         if ! az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
@@ -289,7 +292,6 @@ jobs:
           --build-arg BUILD_DATE="$BUILD_DATE" \
           --build-arg GIT_COMMIT="$GIT_COMMIT" \
           --build-arg BUILD_VERSION="$BUILD_VERSION" \
-          --no-cache \
           .; then
           echo ""
           echo "❌ Docker build failed!"
