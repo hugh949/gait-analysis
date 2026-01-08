@@ -161,7 +161,7 @@ class GaitAnalysisService:
         
         # CRITICAL: Always initialize the service, even if MediaPipe fails
         # This allows the service to work in fallback mode
-        if MEDIAPIPE_AVAILABLE and python is not None and PoseLandmarker is not None and RunningMode is not None:
+        if MEDIAPIPE_AVAILABLE and python is not None and PoseLandmarker is not None and self.running_mode is not None:
             try:
                 # Initialize MediaPipe 0.10.x PoseLandmarker
                 # MediaPipe 0.10.x requires explicit model - try multiple initialization methods
