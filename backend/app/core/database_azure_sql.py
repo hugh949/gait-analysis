@@ -536,8 +536,7 @@ class AzureSQLService:
                     logger.error(f"CRITICAL: Error reading file: {e}", exc_info=True)
             else:
                 logger.warning(f"Storage file does not exist: {file_path}. Directory: {storage_dir}")
-                except Exception as e:
-                    logger.error(f"Could not read storage file for debugging: {e}")
+            
             return None
         
         try:
