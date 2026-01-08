@@ -393,6 +393,41 @@ class AzureSQLService:
             # The in-memory storage should be the source of truth immediately after save
             if analysis_id in AzureSQLService._mock_storage:
                 logger.info(f"Created analysis in mock storage: {analysis_id}. Total analyses: {len(AzureSQLService._mock_storage)}")
+                
+                # Additional verification: Try to read it back immediately to ensure file is visible
+                # This helps catch any filesystem sync issues early
+                file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+                if os.path.exists(file_path):
+                    try:
+                        # Quick verification read (with retry in case of filesystem delay)
+                        for verify_retry in range(3):
+                            try:
+                                with open(file_path, 'r') as f:
+                                    if HAS_FCNTL:
+                                        try:
+                                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                                            verify_data = json.load(f)
+                                        finally:
+                                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                                    else:
+                                        verify_data = json.load(f)
+                                    
+                                    if isinstance(verify_data, dict) and analysis_id in verify_data:
+                                        logger.debug(f"Verified analysis {analysis_id} is readable from file immediately after creation")
+                                        break
+                                    elif verify_retry < 2:
+                                        time.sleep(0.05)  # Short delay and retry
+                                        continue
+                            except (json.JSONDecodeError, IOError, OSError) as e:
+                                if verify_retry < 2:
+                                    logger.debug(f"Verification read failed (attempt {verify_retry + 1}), retrying: {e}")
+                                    time.sleep(0.05)
+                                    continue
+                                else:
+                                    logger.warning(f"Could not verify analysis in file after creation (non-critical): {e}")
+                    except Exception as e:
+                        logger.warning(f"File verification check failed (non-critical): {e}")
+                
                 return True
             else:
                 logger.error(f"Analysis was not found in mock storage immediately after creation: {analysis_id}")
@@ -477,7 +512,7 @@ class AzureSQLService:
             # or in a different process/thread where in-memory storage might not be synced
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)
             
-            for retry in range(5):  # Increased retries
+            for retry in range(8):  # Increased retries for better resilience (8 attempts)
                 # Always reload from file to get latest data
                 self._load_mock_storage()
                 
@@ -511,17 +546,19 @@ class AzureSQLService:
                     except (json.JSONDecodeError, IOError, OSError) as e:
                         logger.debug(f"Error reading file directly (attempt {retry + 1}): {e}")
                     
-                    if retry < 4:  # Don't sleep on last attempt
-                        time.sleep(0.1 * (retry + 1))  # Shorter delays: 0.1s, 0.2s, 0.3s, 0.4s
+                    if retry < 7:  # Don't sleep on last attempt
+                        # Progressive delays: 0.15s, 0.3s, 0.45s, 0.6s, 0.75s, 0.9s, 1.05s
+                        time.sleep(0.15 * (retry + 1))
                         continue
                 else:
                     # File doesn't exist yet - wait a bit longer for it to be created
-                    if retry < 4:
-                        time.sleep(0.2 * (retry + 1))  # Longer delay: 0.2s, 0.4s, 0.6s, 0.8s
+                    if retry < 7:
+                        # Longer delays for file creation: 0.3s, 0.6s, 0.9s, 1.2s, 1.5s, 1.8s, 2.1s
+                        time.sleep(0.3 * (retry + 1))
                         continue
             
             # Analysis not found after retries
-            logger.warning(f"Analysis not found in mock storage after {3} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
+            logger.warning(f"Analysis not found in mock storage after {8} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
             
             # Check if file exists but wasn't loaded (for debugging)
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)

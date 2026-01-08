@@ -248,6 +248,10 @@ export default function AnalysisUpload() {
       setStatus('processing')
       setCurrentStep('pose_estimation')
 
+      // Wait a moment for the analysis to be fully written to the database
+      // This prevents race conditions where the frontend polls before the backend has finished creating the record
+      await new Promise(resolve => setTimeout(resolve, 500)) // 500ms delay
+
       // Poll for analysis status
       pollAnalysisStatus(id)
     } catch (err: any) {
@@ -260,20 +264,49 @@ export default function AnalysisUpload() {
 
   const pollAnalysisStatus = async (id: string) => {
     let consecutiveErrors = 0
-    const maxConsecutiveErrors = 3
+    let consecutive404s = 0
+    const maxConsecutiveErrors = 5 // Increased for better resilience
+    const maxConsecutive404s = 5 // Allow multiple 404s initially (analysis might be creating)
+    const startTime = Date.now()
+    const initialGracePeriod = 5000 // 5 seconds grace period for initial 404s
     
     const poll = async () => {
       try {
         const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
         
         if (response.status === 404) {
-          // Analysis not found - likely lost after container restart
-          console.warn(`Analysis ${id} not found - may have been lost after container restart`)
-          setStatus('failed')
-          setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
-          setAnalysisId(null) // Clear the stale ID
-          return // Stop polling
+          const timeSinceStart = Date.now() - startTime
+          
+          // In the first few seconds after upload, 404s are more likely due to timing
+          // Retry a few times before giving up
+          if (timeSinceStart < initialGracePeriod) {
+            consecutive404s++
+            console.warn(`Analysis ${id} not found (attempt ${consecutive404s}/${maxConsecutive404s}) - may still be creating...`)
+            
+            if (consecutive404s >= maxConsecutive404s) {
+              // After grace period and max retries, give up
+              console.error(`Analysis ${id} not found after ${maxConsecutive404s} attempts within grace period`)
+              setStatus('failed')
+              setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
+              setAnalysisId(null) // Clear the stale ID
+              return // Stop polling
+            }
+            
+            // Retry with exponential backoff (shorter delays initially)
+            setTimeout(poll, 500 * consecutive404s) // 500ms, 1000ms, 1500ms, 2000ms, 2500ms
+            return
+          } else {
+            // After grace period, 404 is more likely a real error
+            console.warn(`Analysis ${id} not found after grace period - likely lost after container restart`)
+            setStatus('failed')
+            setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
+            setAnalysisId(null) // Clear the stale ID
+            return // Stop polling
+          }
         }
+        
+        // Reset 404 counter on success
+        consecutive404s = 0
         
         if (!response.ok) {
           consecutiveErrors++
