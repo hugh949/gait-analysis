@@ -745,9 +745,26 @@ async def process_analysis_azure(
                 
                 # CRITICAL: Update database with retry logic - never fail the process
                 if db_service:
-                    max_retries = 3
+                    max_retries = 5  # Increased retries for progress updates
                     for retry in range(max_retries):
                         try:
+                            # CRITICAL: Verify analysis exists before updating
+                            analysis_check = await db_service.get_analysis(analysis_id)
+                            if not analysis_check:
+                                logger.warning(f"[{request_id}] Analysis not found during progress update. Recreating...")
+                                # Recreate if lost
+                                await db_service.create_analysis({
+                                    'id': analysis_id,
+                                    'patient_id': patient_id,
+                                    'filename': 'unknown',
+                                    'video_url': video_url,
+                                    'status': 'processing',
+                                    'current_step': step,
+                                    'step_progress': mapped_progress,
+                                    'step_message': message
+                                })
+                                break  # Success after recreation
+                            
                             await db_service.update_analysis(analysis_id, {
                                 'current_step': step,
                                 'step_progress': mapped_progress,
@@ -760,7 +777,7 @@ async def process_analysis_azure(
                                     f"[{request_id}] Progress update failed (attempt {retry + 1}/{max_retries}): {update_error}. Retrying...",
                                     extra={"analysis_id": analysis_id, "step": step}
                                 )
-                                await asyncio.sleep(0.1 * (retry + 1))  # Progressive delay
+                                await asyncio.sleep(0.2 * (retry + 1))  # Progressive delay
                                 continue
                             else:
                                 # Final retry failed - log but don't raise
@@ -769,6 +786,21 @@ async def process_analysis_azure(
                                     extra={"analysis_id": analysis_id, "step": step},
                                     exc_info=True
                                 )
+                                # CRITICAL: Try to recreate analysis if update failed completely
+                                try:
+                                    await db_service.create_analysis({
+                                        'id': analysis_id,
+                                        'patient_id': patient_id,
+                                        'filename': 'unknown',
+                                        'video_url': video_url,
+                                        'status': 'processing',
+                                        'current_step': step,
+                                        'step_progress': mapped_progress,
+                                        'step_message': message
+                                    })
+                                    logger.warning(f"[{request_id}] Recreated analysis after progress update failure")
+                                except Exception as recreate_error:
+                                    logger.error(f"[{request_id}] Failed to recreate analysis: {recreate_error}")
                                 # Don't raise - progress updates are non-critical
             except Exception as e:
                 # CRITICAL: Catch-all to ensure progress callback never fails the process
