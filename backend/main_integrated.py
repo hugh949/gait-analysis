@@ -241,22 +241,62 @@ async def api_health_check():
 
 # Health check endpoints
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Root endpoint - serves React app"""
+    request_id = getattr(request.state, 'request_id', 'unknown')
     index_path = FRONTEND_DIR / "index.html"
+    
+    logger.info(f"[{request_id}] Root endpoint called - checking frontend at {index_path}")
+    logger.info(f"[{request_id}] Frontend directory exists: {FRONTEND_DIR.exists()}")
+    logger.info(f"[{request_id}] Index file exists: {index_path.exists()}")
+    
     if index_path.exists():
-        return FileResponse(
-            index_path,
-            media_type="text/html",
-            headers={"Cache-Control": "no-cache"}
-        )
-    return {
-        "status": "healthy",
-        "service": "Gait Analysis Application (Integrated)",
-        "version": "3.0.0",
-        "architecture": "Microsoft Native Services",
-        "message": "Frontend not found, serving API info."
-    }
+        try:
+            # Verify file is readable and has content
+            file_size = index_path.stat().st_size
+            logger.info(f"[{request_id}] Serving index.html (size: {file_size} bytes)")
+            
+            # Read first few bytes to verify it's HTML
+            with open(index_path, 'rb') as f:
+                first_bytes = f.read(100)
+                is_html = b'<html' in first_bytes or b'<!DOCTYPE' in first_bytes
+                logger.info(f"[{request_id}] File appears to be HTML: {is_html}")
+            
+            response = FileResponse(
+                index_path,
+                media_type="text/html; charset=utf-8",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
+            logger.info(f"[{request_id}] Returning FileResponse for index.html")
+            return response
+        except Exception as e:
+            logger.error(f"[{request_id}] Error serving index.html: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Failed to serve frontend",
+                    "message": str(e),
+                    "path": str(index_path)
+                }
+            )
+    
+    logger.warning(f"[{request_id}] Frontend index.html not found at {index_path}")
+    return JSONResponse(
+        status_code=404,
+        content={
+            "status": "healthy",
+            "service": "Gait Analysis Application (Integrated)",
+            "version": "3.0.0",
+            "architecture": "Microsoft Native Services",
+            "message": "Frontend not found, serving API info.",
+            "frontend_path": str(index_path),
+            "frontend_dir_exists": FRONTEND_DIR.exists()
+        }
+    )
 
 
 @app.get("/health")
