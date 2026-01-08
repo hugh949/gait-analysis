@@ -100,8 +100,8 @@ class GaitAnalysisService:
         if MEDIAPIPE_AVAILABLE and python is not None and PoseLandmarker is not None:
             try:
                 # Initialize MediaPipe 0.10.x PoseLandmarker with high accuracy settings
+                # Use default model by not specifying model_asset_path
                 base_options = python.BaseOptions(
-                    model_asset_path=None,  # Use default model
                     delegate=python.BaseOptions.Delegate.CPU  # CPU for compatibility
                 )
                 options = PoseLandmarkerOptions(
