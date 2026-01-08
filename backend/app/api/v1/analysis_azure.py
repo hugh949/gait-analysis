@@ -1295,7 +1295,7 @@ async def process_analysis_azure(
             exc_info=True
         )
         try:
-        await db_service.update_analysis(analysis_id, {
+            await db_service.update_analysis(analysis_id, {
             'status': 'failed',
             'step_message': error_msg
         })
@@ -1340,7 +1340,7 @@ async def process_analysis_azure(
             exc_info=True
         )
         try:
-        await db_service.update_analysis(analysis_id, {
+            await db_service.update_analysis(analysis_id, {
             'status': 'failed',
             'step_message': error_msg
         })
