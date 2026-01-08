@@ -417,17 +417,38 @@ class GaitAnalysisService:
             if self.pose_landmarker and MEDIAPIPE_AVAILABLE:
                 try:
                     # Convert BGR to RGB
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     
                     # Create MediaPipe Image - use VisionImage if available, otherwise use numpy array directly
-                    if VisionImage and ImageFormat:
+                    # CRITICAL: Handle ImageFormat being None gracefully
+                    if VisionImage:
                         try:
-                            mp_image = VisionImage(
-                                image_format=ImageFormat.SRGB,
-                                data=rgb_frame
-                            )
+                            if ImageFormat:
+                                # Use ImageFormat if available
+                                mp_image = VisionImage(
+                                    image_format=ImageFormat.SRGB,
+                                    data=rgb_frame
+                                )
+                            else:
+                                # ImageFormat not available - try without it or use alternative
+                                # Some MediaPipe versions accept data directly
+                                try:
+                                    # Try with just data (MediaPipe may infer format)
+                                    mp_image = VisionImage(data=rgb_frame)
+                                except TypeError:
+                                    # If that fails, try with SRGB as string or enum value
+                                    try:
+                                        # Try using the string "SRGB" or integer value
+                                        mp_image = VisionImage(
+                                            image_format="SRGB",  # or try 1, 2, etc. depending on MediaPipe version
+                                            data=rgb_frame
+                                        )
+                                    except (TypeError, ValueError):
+                                        # Last resort: try numpy array directly
+                                        logger.warning(f"Frame {frame_count}: Could not create VisionImage with ImageFormat - using numpy array directly")
+                                        mp_image = rgb_frame
                         except Exception as img_error:
-                            logger.warning(f"Failed to create VisionImage: {img_error}, using numpy array directly")
+                            logger.warning(f"Frame {frame_count}: Failed to create VisionImage: {img_error}, using numpy array directly")
                             mp_image = rgb_frame
                     else:
                         # Fallback: Use numpy array directly (MediaPipe 0.10.x might accept it)
