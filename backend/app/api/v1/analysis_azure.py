@@ -228,7 +228,7 @@ async def upload_video(
                 f"[{request_id}] File uploaded successfully",
                 extra={"filename": file.filename, "size": file_size, "path": tmp_path}
             )
-            except ValidationError:
+        except ValidationError:
             raise  # Re-raise validation errors
         except Exception as e:
             tmp_file.close()
