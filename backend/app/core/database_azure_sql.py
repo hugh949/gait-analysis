@@ -631,7 +631,7 @@ class AzureSQLService:
                 save_start = time.time()
                 try:
                     self._save_mock_storage()  # Persist to file with forced sync
-                    save_duration = time_module.time() - save_start
+                    save_duration = time.time() - save_start
                     logger.info(f"✅ UPDATE_SYNC: Successfully saved analysis {analysis_id} to file in {save_duration:.3f}s. Total analyses: {len(AzureSQLService._mock_storage)}")
                     
                     # CRITICAL: Quick verification (non-blocking) - only if save was fast
