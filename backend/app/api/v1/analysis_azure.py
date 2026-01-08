@@ -596,13 +596,13 @@ async def process_analysis_azure(
                     f"[{request_id}] Using existing file",
                     extra={"video_path": video_path, "analysis_id": analysis_id}
                 )
-        elif video_url.startswith('mock://'):
-            # Mock mode - this shouldn't happen if we fixed the upload, but handle it
+            elif video_url.startswith('mock://'):
+                # Mock mode - this shouldn't happen if we fixed the upload, but handle it
                 raise StorageError(
                     "Mock storage mode: Video file was not properly saved",
                     details={"video_url": video_url, "analysis_id": analysis_id}
                 )
-        else:
+            else:
             # Try to get video from blob storage by blob name
                 if storage_service is None:
                     raise StorageError(
