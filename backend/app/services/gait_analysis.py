@@ -393,7 +393,9 @@ class GaitAnalysisService:
                 try:
                     progress_callback(progress, f"Processing frame {frame_count}/{total_frames}...")
                 except Exception as e:
-                    logger.error(f"Error calling progress_callback: {e}", exc_info=True)
+                    # CRITICAL: Progress callback errors must never stop processing
+                    logger.warning(f"Error calling progress_callback (non-critical): {e}")
+                    # Don't re-raise - continue processing
         
         cap.release()
         logger.info(f"Video processing complete: processed {frame_count} frames, extracted {len(frames_2d_keypoints)} keypoint frames")
@@ -404,22 +406,44 @@ class GaitAnalysisService:
         
         logger.info(f"Detected poses in {len(frames_2d_keypoints)} frames")
         
-        # Apply advanced signal processing for maximum accuracy
-        if progress_callback:
-            progress_callback(52, "Applying error correction and outlier detection...")
-        
-        logger.debug(f"Pre-filtering: {len(frames_2d_keypoints)} keypoint frames")
-        
-        # Step 1: Error correction - detect and correct outliers
-        frames_2d_keypoints, correction_stats = self._correct_keypoint_errors(frames_2d_keypoints, frame_timestamps)
-        logger.info(f"Error correction: {correction_stats['outliers_removed']} outliers removed, {correction_stats['interpolated']} frames interpolated")
-        
-        if progress_callback:
-            progress_callback(55, "Applying advanced signal processing...")
-        
-        # Step 2: Apply Savitzky-Golay filtering and advanced smoothing
-        frames_2d_keypoints = self._apply_advanced_filtering(frames_2d_keypoints, frame_timestamps)
-        logger.debug(f"Post-filtering: {len(frames_2d_keypoints)} keypoint frames")
+        # STEP 1 (continued): Apply advanced signal processing for maximum accuracy
+        # CRITICAL: Wrap in try-except to ensure processing continues even if filtering fails
+        try:
+            if progress_callback:
+                try:
+                    progress_callback(52, "Applying error correction and outlier detection...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback during error correction: {e}")
+            
+            logger.debug(f"Pre-filtering: {len(frames_2d_keypoints)} keypoint frames")
+            
+            # Step 1: Error correction - detect and correct outliers
+            try:
+                frames_2d_keypoints, correction_stats = self._correct_keypoint_errors(frames_2d_keypoints, frame_timestamps)
+                logger.info(f"Error correction: {correction_stats['outliers_removed']} outliers removed, {correction_stats['interpolated']} frames interpolated")
+            except Exception as e:
+                logger.error(f"Error during keypoint error correction: {e}", exc_info=True)
+                logger.warning("Continuing without error correction - using original keypoints")
+                # Continue with original keypoints - don't fail
+            
+            if progress_callback:
+                try:
+                    progress_callback(55, "Applying advanced signal processing...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback during filtering: {e}")
+            
+            # Step 2: Apply Savitzky-Golay filtering and advanced smoothing
+            try:
+                frames_2d_keypoints = self._apply_advanced_filtering(frames_2d_keypoints, frame_timestamps)
+                logger.debug(f"Post-filtering: {len(frames_2d_keypoints)} keypoint frames")
+            except Exception as e:
+                logger.error(f"Error during advanced filtering: {e}", exc_info=True)
+                logger.warning("Continuing without advanced filtering - using unfiltered keypoints")
+                # Continue with unfiltered keypoints - don't fail
+        except Exception as e:
+            logger.error(f"Unexpected error during signal processing: {e}", exc_info=True)
+            logger.warning("Continuing with original keypoints - signal processing failed")
+            # Continue - don't fail the entire process
         
         # STEP 2: Lift to 3D - with comprehensive error handling and fallback
         if progress_callback:
