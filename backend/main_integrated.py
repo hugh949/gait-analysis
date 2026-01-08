@@ -245,12 +245,17 @@ async def root():
     """Root endpoint - serves React app"""
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"}
+        )
     return {
         "status": "healthy",
         "service": "Gait Analysis Application (Integrated)",
         "version": "3.0.0",
-        "architecture": "Microsoft Native Services"
+        "architecture": "Microsoft Native Services",
+        "message": "Frontend not found, serving API info."
     }
 
 
@@ -303,8 +308,16 @@ if FRONTEND_DIR.exists():
         # Serve index.html for all other routes (React SPA routing)
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
-        return {"error": "Frontend not found"}
+            return FileResponse(
+                index_path,
+                media_type="text/html",
+                headers={"Cache-Control": "no-cache"}
+            )
+        logger.error(f"Frontend index.html not found at {index_path}")
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Frontend not found", "path": str(index_path)}
+        )
 
 
 if __name__ == "__main__":
