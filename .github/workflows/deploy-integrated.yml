@@ -423,13 +423,6 @@ jobs:
         # HIGH AVAILABILITY: Configure for maximum availability
         echo "🚀 Configuring high availability settings..."
         
-        # Increase request timeout for long-running video processing (10 minutes)
-        az webapp config set \
-          --name ${{ env.AZURE_WEBAPP_NAME }} \
-          --resource-group ${{ env.RESOURCE_GROUP }} \
-          --request-timeout 600 \
-          --output none
-        
         # Enable HTTP 2.0 for better performance
         az webapp config set \
           --name ${{ env.AZURE_WEBAPP_NAME }} \
@@ -437,18 +430,23 @@ jobs:
           --http20-enabled true \
           --output none
         
-        # Set health check path
+        # Set health check path (using generic-configurations for newer API)
         az webapp config update \
           --name ${{ env.AZURE_WEBAPP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
           --set healthCheckPath="/health" \
           --output none 2>/dev/null || echo "   (Health check may already be configured)"
         
-        # Set number of workers via environment variable (default: 4 workers)
+        # Set request timeout via app settings (for long-running video processing)
+        # WEBSITES_CONTAINER_START_TIME_LIMIT sets the timeout in seconds (default: 230)
+        # For video processing, we need longer timeout - set to 600 seconds (10 minutes)
         az webapp config appsettings set \
           --name ${{ env.AZURE_WEBAPP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
-          --settings WEBSITES_WORKER_PROCESSES=4 \
+          --settings \
+            WEBSITES_WORKER_PROCESSES=4 \
+            WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
+            SCM_COMMAND_IDLE_TIMEOUT=600 \
           --output none
         
         echo "✅ High availability settings configured"
