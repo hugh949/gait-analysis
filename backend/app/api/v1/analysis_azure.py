@@ -68,11 +68,15 @@ def initialize_services():
         raise  # Database is critical, fail if it can't be initialized
 
 # Initialize services at module load
+# CRITICAL: Don't raise on failure - allow app to start even if services fail
+# Services will be initialized lazily when needed
 try:
     initialize_services()
 except Exception as e:
     logger.critical(f"Critical service initialization failed: {e}", exc_info=True)
-    raise
+    # Don't raise - allow app to start, services will be None and handled gracefully
+    # This prevents the entire app from failing to start if one service has issues
+    logger.warning("App will continue to start, but some services may be unavailable")
 
 def get_gait_analysis_service() -> Optional[GaitAnalysisService]:
     """Get or create gait analysis service instance with error handling"""
