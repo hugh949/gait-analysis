@@ -1088,8 +1088,8 @@ async def process_analysis_azure(
                     )
                     return default
             
-        metrics = {
-                'cadence': safe_get_metric('cadence', 0.0),
+                metrics = {
+                    'cadence': safe_get_metric('cadence', 0.0),
                 'step_length': safe_get_metric('step_length', 0.0),  # in mm
                 'walking_speed': safe_get_metric('walking_speed', 0.0),  # in mm/s
                 'stride_length': safe_get_metric('stride_length', 0.0),  # in mm
