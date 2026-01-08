@@ -285,16 +285,16 @@ async def upload_video(
         # Store metadata in Azure SQL Database
         try:
             analysis_data = {
-            'id': analysis_id,
-            'patient_id': patient_id,
-            'filename': file.filename,
-            'video_url': video_url,
-            'status': 'processing',
-            'current_step': 'pose_estimation',
-            'step_progress': 0,
-            'step_message': 'Upload complete. Starting analysis...'
-        }
-        
+                'id': analysis_id,
+                'patient_id': patient_id,
+                'filename': file.filename,
+                'video_url': video_url,
+                'status': 'processing',
+                'current_step': 'pose_estimation',
+                'step_progress': 0,
+                'step_message': 'Upload complete. Starting analysis...'
+            }
+            
             # Create analysis record - this will save to file and verify it's readable
             creation_success = await db_service.create_analysis(analysis_data)
             if not creation_success:
@@ -345,15 +345,15 @@ async def upload_video(
             # Convert ViewType enum to string if needed
             view_type_str = view_type.value if isinstance(view_type, ViewType) else str(view_type)
             
-        background_tasks.add_task(
-            process_analysis_azure,
-            analysis_id,
-            video_url,
-            patient_id,
+            background_tasks.add_task(
+                process_analysis_azure,
+                analysis_id,
+                video_url,
+                patient_id,
                 view_type_str,
-            reference_length_mm,
-            fps
-        )
+                reference_length_mm,
+                fps
+            )
             # CRITICAL: Start keep-alive heartbeat IMMEDIATELY after scheduling
             # This ensures the analysis stays alive even before processing starts
             # This is especially important in multi-worker environments
