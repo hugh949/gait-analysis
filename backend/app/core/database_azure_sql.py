@@ -639,13 +639,33 @@ class AzureSQLService:
                                 file_data = json.load(f)
                             
                             if isinstance(file_data, dict):
-                                # CRITICAL: Update in-memory storage from file immediately
-                                # This ensures subsequent calls in the same process are fast
-                                AzureSQLService._mock_storage = file_data
+                                # CRITICAL: MERGE file data into in-memory storage, don't replace it
+                                # This ensures analyses being processed in memory are never lost
+                                logger.debug(f"GET: Merging file data into in-memory storage (file has {len(file_data)} analyses, memory has {len(AzureSQLService._mock_storage)})")
+                                for key, value in file_data.items():
+                                    # Only update if not already in memory (preserve active processing)
+                                    # OR if file data is newer (check updated_at)
+                                    if key not in AzureSQLService._mock_storage:
+                                        AzureSQLService._mock_storage[key] = value
+                                        logger.debug(f"GET: Added analysis {key} from file to memory")
+                                    else:
+                                        # Both exist - check which is newer
+                                        file_updated = value.get('updated_at', '')
+                                        mem_updated = AzureSQLService._mock_storage[key].get('updated_at', '')
+                                        if file_updated > mem_updated:
+                                            logger.debug(f"GET: File data for {key} is newer, updating memory")
+                                            AzureSQLService._mock_storage[key] = value
+                                        else:
+                                            logger.debug(f"GET: Memory data for {key} is newer or same, keeping memory version")
                                 
                                 if analysis_id in file_data:
                                     logger.info(f"GET: Found analysis {analysis_id} in file (attempt {retry + 1}/{max_retries})")
-                                    return file_data[analysis_id].copy()
+                                    # Return from memory (which now has merged data)
+                                    if analysis_id in AzureSQLService._mock_storage:
+                                        return AzureSQLService._mock_storage[analysis_id].copy()
+                                    else:
+                                        # Shouldn't happen, but return from file as fallback
+                                        return file_data[analysis_id].copy()
                                 else:
                                     logger.debug(f"GET: File exists but analysis {analysis_id} not found. Available IDs: {list(file_data.keys())}")
                     except json.JSONDecodeError as e:
