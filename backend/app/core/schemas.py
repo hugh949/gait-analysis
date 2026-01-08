@@ -59,7 +59,7 @@ class VideoUploadRequest(BaseModel):
     
     class Config:
         use_enum_values = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "patient_id": "PATIENT_001",
                 "view_type": "front",
@@ -79,7 +79,7 @@ class AnalysisResponse(BaseModel):
     
     class Config:
         use_enum_values = True
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "analysis_id": "123e4567-e89b-12d3-a456-426614174000",
                 "status": "processing",
@@ -115,7 +115,7 @@ class AnalysisListResponse(BaseModel):
     limit: int = Field(..., ge=1, le=1000, description="Requested limit")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "analyses": [],
                 "total": 0,
@@ -132,7 +132,7 @@ class ErrorResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "error": "VALIDATION_ERROR",
                 "message": "Invalid input parameter",

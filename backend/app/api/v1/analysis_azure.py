@@ -971,7 +971,7 @@ async def list_analyses(
     }
 )
 async def get_analysis(
-    analysis_id: str = PathParam(..., description="Analysis identifier", regex="^[a-f0-9-]{36}$")
+    analysis_id: str = PathParam(..., description="Analysis identifier", pattern="^[a-f0-9-]{36}$")
 ) -> AnalysisDetailResponse:
     """
     Get analysis status and results by ID
