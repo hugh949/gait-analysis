@@ -345,18 +345,10 @@ async def upload_video(
             # Convert ViewType enum to string if needed
             view_type_str = view_type.value if isinstance(view_type, ViewType) else str(view_type)
             
-            background_tasks.add_task(
-                process_analysis_azure,
-                analysis_id,
-                video_url,
-                patient_id,
-                view_type_str,
-                reference_length_mm,
-                fps
-            )
             # CRITICAL: Start keep-alive heartbeat IMMEDIATELY after scheduling
             # This ensures the analysis stays alive even before processing starts
             # This is especially important in multi-worker environments
+            # NOTE: This task runs independently and will continue even after request completes
             async def immediate_keepalive():
                 """Immediate keep-alive that starts right after analysis creation"""
                 keepalive_count = 0
