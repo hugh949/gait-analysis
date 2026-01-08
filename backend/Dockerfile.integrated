@@ -68,10 +68,12 @@ COPY main_integrated.py .
 # Copy frontend build (must be built and copied to backend/frontend-dist before Docker build)
 # Create directory first, then copy files individually to avoid ACR layer issues
 RUN mkdir -p ./frontend/dist
-# Copy frontend files - use wildcard to handle missing assets gracefully
-COPY frontend-dist/index.html* ./frontend/dist/ || echo "Warning: index.html not found"
-# Copy assets directory if it exists (frontend build should create it)
-COPY frontend-dist/assets* ./frontend/dist/ || echo "Warning: assets directory not found"
+# Copy frontend files - Docker COPY will fail if files don't exist, which is expected
+# The workflow ensures frontend-dist exists before Docker build
+COPY frontend-dist/index.html ./frontend/dist/index.html
+# Copy assets directory (must exist - frontend build should create it)
+# Use wildcard to copy all files in assets directory
+COPY frontend-dist/assets/ ./frontend/dist/assets/
 
 # Expose port
 EXPOSE 8000
