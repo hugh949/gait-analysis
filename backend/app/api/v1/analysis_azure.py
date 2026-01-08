@@ -201,10 +201,10 @@ async def upload_video(
         # Read file in chunks with size validation
         chunk_size = 1024 * 1024  # 1MB chunks
         try:
-        while True:
-            chunk = await file.read(chunk_size)
-            if not chunk:
-                break
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
                 file_size += len(chunk)
                 
                 # Check file size limit
