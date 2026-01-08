@@ -47,7 +47,7 @@ def initialize_services():
     global storage_service, vision_service, db_service
     
     try:
-storage_service = AzureStorageService()
+        storage_service = AzureStorageService()
         logger.info("✓ AzureStorageService initialized")
     except Exception as e:
         logger.error(f"Failed to initialize AzureStorageService: {e}", exc_info=True)
