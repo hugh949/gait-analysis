@@ -31,6 +31,14 @@ from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import os
 
+# Import request logging middleware
+try:
+    from app.core.middleware import RequestLoggingMiddleware
+    MIDDLEWARE_AVAILABLE = True
+except ImportError:
+    MIDDLEWARE_AVAILABLE = False
+    logger.warning("Request logging middleware not available")
+
 # Import app modules with error handling
 try:
     from app.core.config_simple import settings
@@ -79,21 +87,125 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add exception handler for validation errors to log them
+# Import custom exceptions for global handling
+try:
+    from app.core.exceptions import GaitAnalysisError, gait_error_to_http
+    from app.core.schemas import ErrorResponse
+    EXCEPTIONS_AVAILABLE = True
+except ImportError:
+    EXCEPTIONS_AVAILABLE = False
+    logger.warning("Custom exceptions not available - using basic error handling")
+
+# Global exception handler for custom GaitAnalysisError
+if EXCEPTIONS_AVAILABLE:
+    @app.exception_handler(GaitAnalysisError)
+    async def gait_analysis_error_handler(request: Request, exc: GaitAnalysisError):
+        """Handle custom GaitAnalysisError exceptions with structured logging"""
+        request_id = getattr(request.state, 'request_id', 'unknown')
+        logger.error(
+            f"[{request_id}] GaitAnalysisError: {exc.error_code} - {exc.message}",
+            extra={
+                "error_code": exc.error_code,
+                "message": exc.message,
+                "details": exc.details,
+                "path": str(request.url.path),
+                "method": request.method
+            },
+            exc_info=True
+        )
+        http_exc = gait_error_to_http(exc)
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content=ErrorResponse(
+                error=exc.error_code,
+                message=exc.message,
+                details=exc.details
+            ).dict()
+        )
+
+# Enhanced validation error handler
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Log validation errors for debugging"""
-    logger.error(f"Validation error on {request.method} {request.url.path}")
-    logger.error(f"Validation errors: {exc.errors()}")
-    logger.error(f"Request URL: {request.url}")
+    """Enhanced validation error handler with structured logging"""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    errors = exc.errors()
+    
+    logger.error(
+        f"[{request_id}] Validation error on {request.method} {request.url.path}",
+        extra={
+            "validation_errors": errors,
+            "path": str(request.url.path),
+            "method": request.method,
+            "query_params": dict(request.query_params),
+            "path_params": dict(request.path_params)
+        }
+    )
+    
+    # Extract field-level errors for better error messages
+    field_errors = {}
+    for error in errors:
+        field = ".".join(str(loc) for loc in error.get("loc", []))
+        if field:
+            field_errors[field] = error.get("msg", "Validation error")
+    
     return JSONResponse(
         status_code=422,
-        content={
-            "detail": exc.errors(),
+        content=ErrorResponse(
+            error="VALIDATION_ERROR",
+            message="Request validation failed",
+            details={
+                "errors": errors,
+                "field_errors": field_errors,
+                "path": str(request.url.path)
+            }
+        ).dict() if EXCEPTIONS_AVAILABLE else {
+            "detail": errors,
             "message": "Request validation failed. Check logs for details.",
             "path": str(request.url.path)
         }
     )
+
+# Global exception handler for unhandled exceptions
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler for unexpected errors"""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    
+    # Don't handle HTTPException - let FastAPI handle it
+    if isinstance(exc, HTTPException):
+        raise exc
+    
+    logger.critical(
+        f"[{request_id}] Unhandled exception: {type(exc).__name__}",
+        extra={
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "path": str(request.url.path),
+            "method": request.method
+        },
+        exc_info=True
+    )
+    
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error="INTERNAL_SERVER_ERROR",
+            message="An unexpected error occurred",
+            details={
+                "error_type": type(exc).__name__,
+                "path": str(request.url.path)
+            }
+        ).dict() if EXCEPTIONS_AVAILABLE else {
+            "error": "INTERNAL_SERVER_ERROR",
+            "message": "An unexpected error occurred. Please check logs for details.",
+            "path": str(request.url.path)
+        }
+    )
+
+# Add request logging middleware first (runs first, logs last)
+if MIDDLEWARE_AVAILABLE:
+    app.add_middleware(RequestLoggingMiddleware)
+    logger.info("✓ Request logging middleware enabled")
 
 # CORS middleware
 # For integrated app, allow same-origin requests (relative URLs)
@@ -107,7 +219,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Process-Time"],  # Expose custom headers
 )
 
 # CRITICAL: Register API routes BEFORE catch-all routes
