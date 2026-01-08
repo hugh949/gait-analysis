@@ -85,11 +85,13 @@ az webapp config set \
     --always-on true \
     --output none
 
-# Increase request timeout for long-running video processing
-az webapp config set \
+# Increase request timeout for long-running video processing (via app settings)
+az webapp config appsettings set \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
-    --request-timeout 600 \
+    --settings \
+      WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
+      SCM_COMMAND_IDLE_TIMEOUT=600 \
     --output none
 
 # Enable HTTP 2.0
