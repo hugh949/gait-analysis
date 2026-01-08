@@ -762,18 +762,27 @@ async def process_analysis_azure(
             """Thread-based heartbeat that runs independently of async event loop"""
             heartbeat_count = 0
             logger.info(f"[{request_id}] 🔄 THREAD-BASED HEARTBEAT STARTED for analysis {analysis_id}")
+            logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {threading.current_thread().ident}, Name: {threading.current_thread().name}")
             try:
                 while not heartbeat_stop_event.is_set():
                     # Very frequent updates: every 2 seconds for first 2 minutes, then every 5 seconds
                     sleep_time = 2 if heartbeat_count < 60 else 5
+                    logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Waiting {sleep_time}s before heartbeat #{heartbeat_count + 1}")
                     heartbeat_stop_event.wait(sleep_time)
                     if heartbeat_stop_event.is_set():
+                        logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Stop event set, exiting loop")
                         break
                     heartbeat_count += 1
+                    logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Starting heartbeat #{heartbeat_count}")
                     try:
                         # CRITICAL: Use sync method to update analysis (works from threads)
                         # Check if analysis exists in memory first
+                        logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Checking db_service availability...")
                         if db_service and db_service._use_mock:
+                            logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: db_service available, checking analysis in memory...")
+                            logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: In-memory storage size: {len(db_service._mock_storage)}")
+                            logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Analysis IDs in memory: {list(db_service._mock_storage.keys())}")
+                            
                             if analysis_id in db_service._mock_storage:
                                 # Analysis exists in memory - update it
                                 step = last_known_progress['step']
@@ -781,24 +790,34 @@ async def process_analysis_azure(
                                 message = last_known_progress['message']
                                 
                                 logger.info(f"[{request_id}] 🔄 Thread heartbeat #{heartbeat_count} - updating analysis {analysis_id} ({step} {progress}%)")
+                                logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: last_known_progress: {last_known_progress}")
                                 
                                 # Use sync update method (works from threads)
+                                logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Calling update_analysis_sync...")
                                 update_success = db_service.update_analysis_sync(analysis_id, {
                                     'status': 'processing',
                                     'current_step': step,
                                     'step_progress': progress,
                                     'step_message': message
                                 })
+                                logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: update_analysis_sync returned: {update_success}")
                                 
                                 if update_success:
                                     logger.info(f"[{request_id}] ✅ Thread heartbeat: Analysis {analysis_id} updated (heartbeat #{heartbeat_count})")
+                                    # Verify update
+                                    if analysis_id in db_service._mock_storage:
+                                        logger.debug(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Verified - analysis exists in memory after update")
+                                    else:
+                                        logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: CRITICAL - Analysis NOT in memory after successful update!")
                                 else:
-                                    logger.warning(f"[{request_id}] ⚠️ Thread heartbeat: Update returned False - analysis may be missing")
+                                    logger.warning(f"[{request_id}] ⚠️ Thread heartbeat: Update returned False - analysis may be missing (heartbeat #{heartbeat_count})")
                             else:
                                 # Analysis not in memory - recreate it
                                 logger.warning(f"[{request_id}] ⚠️ Thread heartbeat: Analysis {analysis_id} not in memory - recreating (heartbeat #{heartbeat_count})")
+                                logger.debug(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Recreating with last_known_progress: {last_known_progress}")
                                 # Recreate in memory and file
                                 from datetime import datetime
+                                logger.debug(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Creating analysis dict...")
                                 db_service._mock_storage[analysis_id] = {
                                     'id': analysis_id,
                                     'patient_id': patient_id,
@@ -812,12 +831,16 @@ async def process_analysis_azure(
                                     'created_at': datetime.now().isoformat(),
                                     'updated_at': datetime.now().isoformat()
                                 }
+                                logger.debug(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Saving to file...")
                                 db_service._save_mock_storage()
                                 logger.info(f"[{request_id}] ✅ Thread heartbeat: Recreated analysis {analysis_id} (heartbeat #{heartbeat_count})")
+                                logger.debug(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Verification - analysis in memory: {analysis_id in db_service._mock_storage}")
+                        else:
+                            logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: db_service not available (db_service: {db_service is not None}, _use_mock: {db_service._use_mock if db_service else None})")
                     except Exception as heartbeat_error:
-                        logger.error(f"[{request_id}] ❌ Thread heartbeat error (heartbeat #{heartbeat_count}): {heartbeat_error}", exc_info=True)
+                        logger.error(f"[{request_id}] ❌ Thread heartbeat error (heartbeat #{heartbeat_count}): {type(heartbeat_error).__name__}: {heartbeat_error}", exc_info=True)
             except Exception as e:
-                logger.error(f"[{request_id}] ❌ Thread heartbeat fatal error: {e}", exc_info=True)
+                logger.error(f"[{request_id}] ❌ Thread heartbeat fatal error: {type(e).__name__}: {e}", exc_info=True)
         
         # Start thread-based heartbeat IMMEDIATELY - before any processing starts
         heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=True)
