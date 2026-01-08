@@ -933,14 +933,14 @@ async def process_analysis_azure(
             except Exception as e:
                 logger.warning(f"[{request_id}] Failed to update progress at start: {e}")
             
-        analysis_result = await gait_service.analyze_video(
-            video_path,
-            fps=fps,
-            reference_length_mm=reference_length_mm,
-            view_type=view_type,
-            progress_callback=progress_callback
-        )
-        
+            analysis_result = await gait_service.analyze_video(
+                video_path,
+                fps=fps,
+                reference_length_mm=reference_length_mm,
+                view_type=view_type,
+                progress_callback=progress_callback
+            )
+            
             if not analysis_result:
                 logger.warning(
                     f"[{request_id}] Analysis returned empty result, creating fallback result",
