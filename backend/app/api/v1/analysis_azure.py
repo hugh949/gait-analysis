@@ -1117,79 +1117,37 @@ async def process_analysis_azure(
             )
         except PoseEstimationError as e:
             logger.error(
-                f"[{request_id}] Pose estimation failed: {e.message}",
+                f"[{request_id}] ❌ Pose estimation failed: {e.message}",
                 extra={"analysis_id": analysis_id, "error_code": e.error_code, "details": e.details},
                 exc_info=True
             )
-            # CRITICAL: Don't fail - create fallback result
-            logger.warning(f"[{request_id}] Creating fallback result after pose estimation error")
-            analysis_result = {
-                'status': 'completed',
-                'analysis_type': 'fallback_analysis',
-                'metrics': {
-                    'cadence': 0.0,
-                    'step_length': 0.0,
-                    'walking_speed': 0.0,
-                    'stride_length': 0.0,
-                    'double_support_time': 0.0,
-                    'swing_time': 0.0,
-                    'stance_time': 0.0,
-                    'fallback_metrics': True,
-                    'error': f"Pose estimation failed: {e.message}"
-                },
-                'frames_processed': 0,
-                'total_frames': 0
-            }
+            # CRITICAL: Don't create fallback - fail the analysis so user knows processing didn't work
+            raise VideoProcessingError(
+                f"Pose estimation failed: {e.message}",
+                details={"analysis_id": analysis_id, "error_code": e.error_code, "details": e.details}
+            )
         except GaitMetricsError as e:
             logger.error(
-                f"[{request_id}] Gait metrics calculation failed: {e.message}",
+                f"[{request_id}] ❌ Gait metrics calculation failed: {e.message}",
                 extra={"analysis_id": analysis_id, "error_code": e.error_code, "details": e.details},
                 exc_info=True
             )
-            # CRITICAL: Don't fail - create fallback result
-            logger.warning(f"[{request_id}] Creating fallback result after metrics error")
-            analysis_result = {
-                'status': 'completed',
-                'analysis_type': 'fallback_analysis',
-                'metrics': {
-                    'cadence': 0.0,
-                    'step_length': 0.0,
-                    'walking_speed': 0.0,
-                    'stride_length': 0.0,
-                    'double_support_time': 0.0,
-                    'swing_time': 0.0,
-                    'stance_time': 0.0,
-                    'fallback_metrics': True,
-                    'error': f"Metrics calculation failed: {e.message}"
-                },
-                'frames_processed': 0,
-                'total_frames': 0
-            }
+            # CRITICAL: Don't create fallback - fail the analysis so user knows processing didn't work
+            raise VideoProcessingError(
+                f"Gait metrics calculation failed: {e.message}",
+                details={"analysis_id": analysis_id, "error_code": e.error_code, "details": e.details}
+            )
         except Exception as e:
             logger.error(
-                f"[{request_id}] Unexpected error during video analysis: {e}",
+                f"[{request_id}] ❌ Unexpected error during video analysis: {type(e).__name__}: {e}",
                 extra={"analysis_id": analysis_id, "error_type": type(e).__name__},
                 exc_info=True
             )
-            # CRITICAL: Don't fail - create fallback result
-            logger.warning(f"[{request_id}] Creating fallback result after unexpected error")
-            analysis_result = {
-                'status': 'completed',
-                'analysis_type': 'fallback_analysis',
-                'metrics': {
-                    'cadence': 0.0,
-                    'step_length': 0.0,
-                    'walking_speed': 0.0,
-                    'stride_length': 0.0,
-                    'double_support_time': 0.0,
-                    'swing_time': 0.0,
-                    'stance_time': 0.0,
-                    'fallback_metrics': True,
-                    'error': f"Unexpected error: {str(e)}"
-                },
-                'frames_processed': 0,
-                'total_frames': 0
-            }
+            # CRITICAL: Don't create fallback - fail the analysis so user knows processing didn't work
+            raise VideoProcessingError(
+                f"Unexpected error during video analysis: {str(e)}",
+                details={"analysis_id": analysis_id, "error_type": type(e).__name__, "error": str(e)}
+            )
         
         # STEP 3-4: Extract and format metrics with validation and fallback
         # CRITICAL: Ensure we always have metrics, even if extraction fails
