@@ -137,7 +137,7 @@ class GaitAnalysisService:
         # Monitor progress updates
         async def monitor_progress():
             while not processing_done.is_set():
-                await asyncio.sleep(0.1)  # Check every 100ms
+                await asyncio.sleep(0.2)  # Check every 200ms (slightly less frequent to reduce overhead)
                 
                 # Get new progress updates
                 with progress_lock:
@@ -147,7 +147,14 @@ class GaitAnalysisService:
                 # Send updates via async callback
                 for progress, message in new_updates:
                     if progress_callback:
-                        await progress_callback(progress, message)
+                        try:
+                            await progress_callback(progress, message)
+                        except Exception as e:
+                            logger.error(f"Error in progress callback: {e}", exc_info=True)
+                
+                # Log if we have updates (for debugging)
+                if new_updates:
+                    logger.debug(f"Sent {len(new_updates)} progress updates via monitor")
         
         # Start monitoring
         monitor_task = asyncio.create_task(monitor_progress())
