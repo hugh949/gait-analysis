@@ -268,7 +268,12 @@ export default function AnalysisUpload() {
     const maxConsecutiveErrors = 5 // Increased for better resilience
     const maxConsecutive404s = 5 // Allow multiple 404s initially (analysis might be creating)
     const startTime = Date.now()
-    const initialGracePeriod = 5000 // 5 seconds grace period for initial 404s
+    const initialGracePeriod = 10000 // Increased to 10 seconds - allows multi-worker file sync to complete
+    
+    // CRITICAL: Initial delay to allow file write and sync in multi-worker environment
+    // In multi-worker setups, the file needs time to be written, synced, and become visible
+    // to other workers. 2 seconds gives enough time for filesystem operations.
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
     const poll = async () => {
       try {

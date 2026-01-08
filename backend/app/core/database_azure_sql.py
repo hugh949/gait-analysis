@@ -463,7 +463,7 @@ class AzureSQLService:
                 except (json.JSONDecodeError, IOError, OSError) as e:
                     if verify_retry < 9:
                         logger.debug(f"CREATE: Verification read failed (attempt {verify_retry + 1}), retrying: {e}")
-                        time.sleep(0.1)
+                        time.sleep(0.2)  # Increased to 200ms to allow filesystem sync
                         continue
                     else:
                         logger.warning(f"CREATE: Could not verify analysis in file after creation: {e}")
