@@ -390,17 +390,42 @@ async def upload_video(
                         except Exception as keepalive_error:
                             logger.error(f"[{request_id}] ❌ Keep-alive error on heartbeat #{keepalive_count}: {keepalive_error}", exc_info=True)
                 except asyncio.CancelledError:
-                    logger.info(f"[{request_id}] 🛑 Keep-alive cancelled after {keepalive_count} heartbeats")
+                    logger.warning(f"[{request_id}] 🛑 Keep-alive CANCELLED after {keepalive_count} heartbeats - this should not happen!")
+                    # Try to restart keep-alive if cancelled (shouldn't happen, but safety)
+                    try:
+                        logger.warning(f"[{request_id}] ⚠️ Keep-alive was cancelled - analysis may become invisible")
+                        # Don't restart - just log the issue
+                    except:
+                        pass
                 except Exception as e:
                     logger.error(f"[{request_id}] ❌ Keep-alive fatal error after {keepalive_count} heartbeats: {e}", exc_info=True)
+                    # Try to continue - log error but don't stop
+                    try:
+                        await asyncio.sleep(5)  # Wait before potentially restarting
+                    except:
+                        pass
             
             # Start immediate keep-alive task
+            # CRITICAL: Create task in the event loop - it will run independently
+            # The task will continue even after the request handler returns
             keepalive_task = asyncio.create_task(immediate_keepalive())
             logger.info(f"[{request_id}] ✅ Started immediate keep-alive task for analysis {analysis_id} (task ID: {id(keepalive_task)})")
             logger.info(f"[{request_id}] ✅ Keep-alive task is running: {not keepalive_task.done()}")
+            logger.info(f"[{request_id}] ✅ Keep-alive task will continue running after request completes")
             
+            # Schedule the actual processing task
+            background_tasks.add_task(
+                process_analysis_azure,
+                analysis_id,
+                video_url,
+                patient_id,
+                view_type_str,
+                reference_length_mm,
+                fps
+            )
             logger.info(f"[{request_id}] ✅ Background processing task scheduled for analysis {analysis_id}", extra={"analysis_id": analysis_id})
             logger.info(f"[{request_id}] ✅ Upload complete - analysis {analysis_id} should be visible immediately")
+            logger.info(f"[{request_id}] ✅ Both keep-alive and processing tasks are now running")
         except Exception as e:
             logger.error(f"[{request_id}] Error scheduling background task: {e}", exc_info=True)
             # Update analysis status to failed
