@@ -579,7 +579,7 @@ class GaitAnalysisService:
         # STEP 3: Calculate gait metrics - with comprehensive error handling and fallback
         if progress_callback:
             try:
-            progress_callback(75, "Calculating gait parameters...")
+                progress_callback(75, "Calculating gait parameters...")
             except Exception as e:
                 logger.warning(f"Error in progress callback during metrics calculation: {e}")
         
