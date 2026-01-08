@@ -1138,8 +1138,8 @@ async def process_analysis_azure(
         max_db_retries = 5
         for retry in range(max_db_retries):
             try:
-        await db_service.update_analysis(analysis_id, {
-            'current_step': 'report_generation',
+                await db_service.update_analysis(analysis_id, {
+                    'current_step': 'report_generation',
             'step_progress': 95,
             'step_message': 'Generating analysis report...'
         })
