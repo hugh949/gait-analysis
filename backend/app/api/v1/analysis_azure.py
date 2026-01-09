@@ -368,10 +368,10 @@ async def upload_video(
         
                 # In mock mode, video_url will be "mock://..." - use temp file directly
                 if video_url and video_url.startswith('mock://'):
-            video_url = tmp_path
+                    video_url = tmp_path
                     logger.info(f"[{request_id}] Mock mode: Using temp file directly")
                 elif video_url:
-            # Real storage - clean up temp file
+                    # Real storage - clean up temp file
                     try:
                         os.unlink(tmp_path)
                         tmp_path = None
