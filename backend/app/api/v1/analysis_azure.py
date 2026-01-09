@@ -362,16 +362,16 @@ async def upload_video(
                 logger.warning(f"[{request_id}] Storage service not available, using mock mode")
                 video_url = tmp_path  # Use temp file directly in mock mode
             else:
-        blob_name = f"{analysis_id}{file_ext}"
+                blob_name = f"{analysis_id}{file_ext}"
                 logger.debug(f"[{request_id}] Uploading to blob storage: {blob_name}")
-        video_url = await storage_service.upload_video(tmp_path, blob_name)
-        
+                video_url = await storage_service.upload_video(tmp_path, blob_name)
+                
                 # In mock mode, video_url will be "mock://..." - use temp file directly
                 if video_url and video_url.startswith('mock://'):
-            video_url = tmp_path
+                    video_url = tmp_path
                     logger.info(f"[{request_id}] Mock mode: Using temp file directly")
                 elif video_url:
-            # Real storage - clean up temp file
+                    # Real storage - clean up temp file
                     try:
                         os.unlink(tmp_path)
                         tmp_path = None
@@ -381,19 +381,19 @@ async def upload_video(
         except Exception as e:
             logger.error(f"[{request_id}] Error uploading to storage: {e}", exc_info=True)
             if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
             raise StorageError("Failed to upload file to storage", details={"error": str(e)})
         
         # Store metadata in Azure SQL Database
         try:
-        analysis_data = {
-            'id': analysis_id,
-            'patient_id': patient_id,
-            'filename': file.filename,
-            'video_url': video_url,
+            analysis_data = {
+                'id': analysis_id,
+                'patient_id': patient_id,
+                'filename': file.filename,
+                'video_url': video_url,
             'status': 'processing',
             'current_step': 'pose_estimation',
             'step_progress': 0,
@@ -1251,10 +1251,10 @@ async def process_analysis_azure(
                                 logger.debug(f"[{request_id}] 📝 PROGRESS CALLBACK: Current analysis state: status={db_service._mock_storage[analysis_id].get('status')}, step={db_service._mock_storage[analysis_id].get('current_step')}, progress={db_service._mock_storage[analysis_id].get('step_progress')}")
                             
                             update_success = db_service.update_analysis_sync(analysis_id, {
-                    'current_step': step,
-                    'step_progress': mapped_progress,
-                    'step_message': message
-                })
+                                'current_step': step,
+                                'step_progress': mapped_progress,
+                                'step_message': message
+                            })
                             logger.debug(f"[{request_id}] 📝 PROGRESS CALLBACK: update_analysis_sync returned: {update_success}")
                         else:
                             # For real SQL, use async method
@@ -1455,14 +1455,14 @@ async def process_analysis_azure(
             logger.error(f"[{request_id}] 🎬 FPS: {fps}, View type: {view_type}")
             logger.error(f"[{request_id}] 🎬 Progress callback available: {progress_callback is not None}")
             
-        analysis_result = await gait_service.analyze_video(
-            video_path,
-            fps=fps,
-            reference_length_mm=reference_length_mm,
-            view_type=view_type,
-            progress_callback=progress_callback
-        )
-        
+            analysis_result = await gait_service.analyze_video(
+                video_path,
+                fps=fps,
+                reference_length_mm=reference_length_mm,
+                view_type=view_type,
+                progress_callback=progress_callback
+            )
+            
             # Stop periodic monitoring
             heartbeat_monitor_task.cancel()
             try:
