@@ -296,9 +296,9 @@ async def upload_video(
                                 field="file",
                                 details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
                             )
-            
-            tmp_file.close()
-            upload_duration = time.time() - upload_start_time
+                    
+                    tmp_file.close()
+                    upload_duration = time.time() - upload_start_time
             upload_rate = (file_size / upload_duration) / (1024 * 1024) if upload_duration > 0 else 0  # MB/s
             
             logger.info(
