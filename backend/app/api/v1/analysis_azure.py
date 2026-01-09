@@ -715,12 +715,12 @@ async def process_analysis_azure(
         # Update progress: Starting - with retry logic
         for retry in range(5):
             try:
-        await db_service.update_analysis(analysis_id, {
-            'status': 'processing',
-            'current_step': 'pose_estimation',
-            'step_progress': 5,
-            'step_message': 'Downloading video for analysis...'
-        })
+                await db_service.update_analysis(analysis_id, {
+                    'status': 'processing',
+                    'current_step': 'pose_estimation',
+                    'step_progress': 5,
+                    'step_message': 'Downloading video for analysis...'
+                })
                 break  # Success
             except Exception as e:
                 if retry < 4:
