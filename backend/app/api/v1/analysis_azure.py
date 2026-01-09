@@ -317,22 +317,22 @@ async def upload_video(
                     # CRITICAL: Warn if upload is approaching timeout
                     if upload_duration > 200:  # 200 seconds - very close to 230s timeout
                         logger.error(
-                    f"[{request_id}] ⚠️ CRITICAL: Upload took {upload_duration:.1f}s (Azure timeout is 230s). "
-                    f"File may have timed out. Size: {file_size / (1024*1024):.1f}MB"
-                )
-            elif upload_duration > 180:  # 3 minutes - getting close
-                logger.warning(
-                    f"[{request_id}] ⚠️ Upload took {upload_duration:.1f}s (approaching 230s Azure timeout). "
-                    f"File size: {file_size / (1024*1024):.1f}MB. "
-                    f"Consider using smaller files (<50MB) to avoid timeout issues."
-                )
-            elif file_size > MAX_RECOMMENDED_SIZE:
-                logger.warning(
-                    f"[{request_id}] ⚠️ Large file uploaded ({file_size / (1024*1024):.1f}MB). "
-                    f"Upload took {upload_duration:.1f}s. "
-                    f"Azure App Service has a 230-second request timeout. "
-                    f"Consider using smaller files (<50MB) to avoid timeout issues."
-                )
+                            f"[{request_id}] ⚠️ CRITICAL: Upload took {upload_duration:.1f}s (Azure timeout is 230s). "
+                            f"File may have timed out. Size: {file_size / (1024*1024):.1f}MB"
+                        )
+                    elif upload_duration > 180:  # 3 minutes - getting close
+                        logger.warning(
+                            f"[{request_id}] ⚠️ Upload took {upload_duration:.1f}s (approaching 230s Azure timeout). "
+                            f"File size: {file_size / (1024*1024):.1f}MB. "
+                            f"Consider using smaller files (<50MB) to avoid timeout issues."
+                        )
+                    elif file_size > MAX_RECOMMENDED_SIZE:
+                        logger.warning(
+                            f"[{request_id}] ⚠️ Large file uploaded ({file_size / (1024*1024):.1f}MB). "
+                            f"Upload took {upload_duration:.1f}s. "
+                            f"Azure App Service has a 230-second request timeout. "
+                            f"Consider using smaller files (<50MB) to avoid timeout issues."
+                        )
         except ValidationError:
             raise  # Re-raise validation errors
         except Exception as e:
