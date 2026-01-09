@@ -627,6 +627,16 @@ async def process_analysis_azure(
     request_id = str(uuid.uuid4())[:8]
     video_path: Optional[str] = None
     
+    # CRITICAL: Log immediately when function is called (before any try block)
+    # This ensures we see if the background task actually starts
+    logger.info("=" * 80)
+    logger.info(f"[{request_id}] ========== PROCESSING TASK FUNCTION CALLED ==========")
+    logger.info(f"[{request_id}] Analysis ID: {analysis_id}")
+    logger.info(f"[{request_id}] Video URL: {video_url}")
+    logger.info(f"[{request_id}] Parameters: view_type={view_type}, fps={fps}, reference_length_mm={reference_length_mm}")
+    logger.info(f"[{request_id}] Timestamp: {datetime.utcnow().isoformat()}")
+    logger.info("=" * 80)
+    
     try:
         logger.info(
             f"[{request_id}] 🚀 PROCESSING TASK STARTED for analysis {analysis_id}",
@@ -850,71 +860,47 @@ async def process_analysis_azure(
         heartbeat_stop_event = threading.Event()
         
         def thread_based_heartbeat():
-            """Thread-based heartbeat that runs independently of async event loop"""
+            """Thread-based heartbeat that runs independently of async event loop
+            CRITICAL: This thread MUST run continuously and cannot be blocked.
+            It uses very frequent updates (every 0.2s) to ensure analysis is ALWAYS visible.
+            """
             heartbeat_count = 0
             thread_id = threading.current_thread().ident
             thread_name = threading.current_thread().name
+            last_successful_update = time.time()
+            
             logger.info(f"[{request_id}] 🔄 THREAD-BASED HEARTBEAT STARTED for analysis {analysis_id}")
             logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {thread_id}, Name: {thread_name}")
+            logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Running with ULTRA-FREQUENT updates (every 0.2s)")
+            
             try:
                 while not heartbeat_stop_event.is_set():
-                    # CRITICAL: VERY frequent updates during long processing
-                    # Every 0.5 seconds for first 10 minutes (1200 heartbeats), then every 1 second
-                    # This ensures the analysis is ALWAYS visible across workers during video processing
-                    # More frequent updates = better persistence during CPU-intensive processing
-                    sleep_time = 0.5 if heartbeat_count < 1200 else 1.0
-                    is_alive = threading.current_thread().is_alive()
-                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Waiting {sleep_time}s before heartbeat #{heartbeat_count + 1} (thread alive: {is_alive}, thread ID: {thread_id})")
-                    # Use timeout to ensure we wake up even if event is never set
+                    # CRITICAL: ULTRA-FREQUENT updates during long processing
+                    # Every 0.2 seconds (5 times per second) for maximum persistence
+                    # This ensures the analysis is ALWAYS visible across workers during CPU-intensive processing
+                    # Even if one update is slow, the next one will happen very soon
+                    sleep_time = 0.2  # Always 0.2 seconds - maximum frequency
                     heartbeat_stop_event.wait(sleep_time)
                     if heartbeat_stop_event.is_set():
                         logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Stop event set, exiting loop (heartbeat count: {heartbeat_count})")
                         break
+                    
                     heartbeat_count += 1
-                    # CRITICAL: Log at INFO level so we can see heartbeat is running
-                    is_alive = threading.current_thread().is_alive()
-                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Starting heartbeat #{heartbeat_count} (thread alive: {is_alive}, thread ID: {thread_id})")
+                    current_time = time.time()
+                    time_since_last_success = current_time - last_successful_update
+                    
+                    # Log every 10 heartbeats (every 2 seconds) to avoid spam
+                    if heartbeat_count % 10 == 0:
+                        logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Heartbeat #{heartbeat_count} (time since last success: {time_since_last_success:.2f}s)")
+                    
                     try:
                         # CRITICAL: Use sync method to update analysis (works from threads)
                         # Check if analysis exists in memory first
                         if db_service and db_service._use_mock:
-                            logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Checking analysis in memory... (storage size: {len(db_service._mock_storage)})")
-                            
-                            if analysis_id in db_service._mock_storage:
-                                # Analysis exists in memory - update it
-                                step = last_known_progress['step']
-                                progress = last_known_progress['progress']
-                                message = last_known_progress['message']
-                                
-                                logger.info(f"[{request_id}] 🔄 Thread heartbeat #{heartbeat_count} - updating analysis {analysis_id} ({step} {progress}%)")
-                                
-                                # Use sync update method (works from threads)
-                                # CRITICAL: Add timeout to prevent blocking on file I/O
-                                start_time = time.time()
-                                update_success = db_service.update_analysis_sync(analysis_id, {
-                                    'status': 'processing',
-                                    'current_step': step,
-                                    'step_progress': progress,
-                                    'step_message': message
-                                })
-                                update_duration = time.time() - start_time
-                                
-                                if update_duration > 0.5:
-                                    logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Update took {update_duration:.2f}s (slow file I/O)")
-                                
-                                if update_success:
-                                    logger.info(f"[{request_id}] ✅ Thread heartbeat: Analysis {analysis_id} updated successfully (heartbeat #{heartbeat_count}, took {update_duration:.3f}s)")
-                                    # Verify update
-                                    if analysis_id in db_service._mock_storage:
-                                        logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Verified - analysis exists in memory after update")
-                                    else:
-                                        logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: CRITICAL - Analysis NOT in memory after successful update!")
-                                else:
-                                    logger.warning(f"[{request_id}] ⚠️ Thread heartbeat: Update returned False - analysis may be missing (heartbeat #{heartbeat_count})")
-                            else:
-                                # Analysis not in memory - recreate it
-                                logger.warning(f"[{request_id}] ⚠️ Thread heartbeat: Analysis {analysis_id} not in memory - recreating (heartbeat #{heartbeat_count})")
-                                # Recreate in memory and file
+                            # CRITICAL: Always ensure analysis exists - recreate if missing
+                            if analysis_id not in db_service._mock_storage:
+                                # Analysis not in memory - IMMEDIATELY recreate it
+                                logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Analysis {analysis_id} NOT in memory - RECREATING IMMEDIATELY")
                                 from datetime import datetime
                                 db_service._mock_storage[analysis_id] = {
                                     'id': analysis_id,
@@ -924,24 +910,109 @@ async def process_analysis_azure(
                                     'status': 'processing',
                                     'current_step': last_known_progress['step'],
                                     'step_progress': last_known_progress['progress'],
-                                    'step_message': f"{last_known_progress['message']} (recreated by thread heartbeat #{heartbeat_count})",
+                                    'step_message': f"{last_known_progress['message']} (recreated by heartbeat #{heartbeat_count})",
                                     'metrics': {},
                                     'created_at': datetime.now().isoformat(),
                                     'updated_at': datetime.now().isoformat()
                                 }
-                                db_service._save_mock_storage()
-                                logger.info(f"[{request_id}] ✅ Thread heartbeat: Recreated analysis {analysis_id} (heartbeat #{heartbeat_count})")
+                                # Force immediate save
+                                try:
+                                    db_service._save_mock_storage(force_sync=True)
+                                    logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Recreated and saved analysis {analysis_id}")
+                                    last_successful_update = time.time()
+                                except Exception as recreate_error:
+                                    logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: Failed to save recreated analysis: {recreate_error}")
+                            
+                            # Analysis exists in memory - update it
+                            step = last_known_progress['step']
+                            progress = last_known_progress['progress']
+                            message = last_known_progress['message']
+                            
+                            # Use sync update method (works from threads)
+                            # CRITICAL: This MUST be fast - use timeout protection
+                            start_time = time.time()
+                            try:
+                                update_success = db_service.update_analysis_sync(analysis_id, {
+                                    'status': 'processing',
+                                    'current_step': step,
+                                    'step_progress': progress,
+                                    'step_message': message
+                                })
+                                update_duration = time.time() - start_time
+                                
+                                if update_success:
+                                    last_successful_update = time.time()
+                                    if heartbeat_count % 50 == 0:  # Log every 50 heartbeats (every 10 seconds)
+                                        logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Analysis {analysis_id} updated ({step} {progress}%, took {update_duration:.3f}s)")
+                                    
+                                    # CRITICAL: Verify analysis still exists after update
+                                    if analysis_id not in db_service._mock_storage:
+                                        logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: CRITICAL - Analysis disappeared after update! Recreating...")
+                                        # Recreate immediately
+                                        from datetime import datetime
+                                        db_service._mock_storage[analysis_id] = {
+                                            'id': analysis_id,
+                                            'patient_id': patient_id,
+                                            'filename': 'unknown',
+                                            'video_url': video_url,
+                                            'status': 'processing',
+                                            'current_step': step,
+                                            'step_progress': progress,
+                                            'step_message': f"{message} (recreated after disappearance)",
+                                            'metrics': {},
+                                            'created_at': datetime.now().isoformat(),
+                                            'updated_at': datetime.now().isoformat()
+                                        }
+                                        db_service._save_mock_storage(force_sync=True)
+                                        logger.error(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Recreated analysis after disappearance")
+                                else:
+                                    if heartbeat_count % 10 == 0:  # Log every 10 heartbeats
+                                        logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Update returned False")
+                                
+                                if update_duration > 0.3:
+                                    logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Slow update took {update_duration:.2f}s (may impact persistence)")
+                            except Exception as update_error:
+                                logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: Update exception: {type(update_error).__name__}: {update_error}", exc_info=True)
+                                # Try to recreate if update failed
+                                if analysis_id not in db_service._mock_storage:
+                                    logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: Analysis missing after update error - recreating...")
+                                    from datetime import datetime
+                                    db_service._mock_storage[analysis_id] = {
+                                        'id': analysis_id,
+                                        'patient_id': patient_id,
+                                        'filename': 'unknown',
+                                        'video_url': video_url,
+                                        'status': 'processing',
+                                        'current_step': last_known_progress['step'],
+                                        'step_progress': last_known_progress['progress'],
+                                        'step_message': f"{last_known_progress['message']} (recreated after error)",
+                                        'metrics': {},
+                                        'created_at': datetime.now().isoformat(),
+                                        'updated_at': datetime.now().isoformat()
+                                    }
+                                    try:
+                                        db_service._save_mock_storage(force_sync=True)
+                                        logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Recreated analysis after error")
+                                    except:
+                                        pass
                         else:
-                            logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: db_service not available")
+                            if heartbeat_count % 50 == 0:  # Log every 50 heartbeats
+                                logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: db_service not available")
                     except Exception as heartbeat_error:
-                        logger.error(f"[{request_id}] ❌ Thread heartbeat error (heartbeat #{heartbeat_count}): {type(heartbeat_error).__name__}: {heartbeat_error}", exc_info=True)
+                        logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT #{heartbeat_count}: Fatal error: {type(heartbeat_error).__name__}: {heartbeat_error}", exc_info=True)
+                        # Continue - don't let errors stop the heartbeat
             except Exception as e:
-                logger.error(f"[{request_id}] ❌ Thread heartbeat fatal error: {type(e).__name__}: {e}", exc_info=True)
+                logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT: Fatal outer error: {type(e).__name__}: {e}", exc_info=True)
+                # Try to restart heartbeat logic (but this shouldn't happen)
+                logger.error(f"[{request_id}] ❌ THREAD HEARTBEAT: Heartbeat thread is exiting - analysis may become invisible!")
         
         # Start thread-based heartbeat IMMEDIATELY - before any processing starts
-        heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=True, name=f"heartbeat-{analysis_id[:8]}")
+        # CRITICAL: Use non-daemon thread so it can't be killed by Python shutdown
+        # This ensures the heartbeat continues even during long processing
+        heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=False, name=f"heartbeat-{analysis_id[:8]}")
         heartbeat_thread.start()
-        logger.info(f"[{request_id}] ✅ Started thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident}, name: {heartbeat_thread.name})")
+        logger.info(f"[{request_id}] ✅ Started NON-DAEMON thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident}, name: {heartbeat_thread.name})")
+        logger.info(f"[{request_id}] ✅ Heartbeat thread will run with ULTRA-FREQUENT updates (every 0.2s) to ensure persistence")
         
         # Progress callback that maps internal progress to UI steps with error handling
         async def progress_callback(progress_pct: int, message: str) -> None:
