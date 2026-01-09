@@ -889,14 +889,27 @@ async def process_analysis_azure(
                     current_time = time.time()
                     time_since_last_success = current_time - last_successful_update
                     
-                    # Log every 5 heartbeats (every 0.5 seconds) for better visibility
-                    if heartbeat_count % 5 == 0:
-                        logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Running (time since last success: {time_since_last_success:.2f}s)")
+                    # DIAGNOSTIC: Log EVERY heartbeat for maximum visibility
+                    import os
+                    import threading
+                    process_id = os.getpid()
+                    thread_id = threading.current_thread().ident
+                    logger.error(f"[{request_id}] 🔄🔄🔄 HEARTBEAT #{heartbeat_count} DIAGNOSTIC 🔄🔄🔄")
+                    logger.error(f"[{request_id}] 🔄 Process ID: {process_id}, Thread ID: {thread_id}")
+                    logger.error(f"[{request_id}] 🔄 Time since last success: {time_since_last_success:.3f}s")
+                    logger.error(f"[{request_id}] 🔄 Analysis ID: {analysis_id}")
+                    logger.error(f"[{request_id}] 🔄 Last known progress: {last_known_progress}")
                     
                     try:
                         # CRITICAL: Use sync method to update analysis (works from threads)
                         # Check if analysis exists in memory first
                         if db_service and db_service._use_mock:
+                            # DIAGNOSTIC: Log memory state before check
+                            logger.error(f"[{request_id}] 🔄 HEARTBEAT #{heartbeat_count}: Checking analysis in memory...")
+                            logger.error(f"[{request_id}] 🔄 Memory storage size: {len(db_service._mock_storage)}")
+                            logger.error(f"[{request_id}] 🔄 Memory analysis IDs: {list(db_service._mock_storage.keys())}")
+                            logger.error(f"[{request_id}] 🔄 Analysis in memory: {analysis_id in db_service._mock_storage}")
+                            
                             # CRITICAL: Always ensure analysis exists - recreate if missing
                             if analysis_id not in db_service._mock_storage:
                                 # Analysis not in memory - IMMEDIATELY recreate it
@@ -942,9 +955,21 @@ async def process_analysis_azure(
                                 
                                 if update_success:
                                     last_successful_update = time.time()
-                                    # Log every 10 heartbeats (every 1 second) for better visibility
-                                    if heartbeat_count % 10 == 0:
-                                        logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Analysis {analysis_id} updated ({step} {progress}%, took {update_duration:.3f}s)")
+                                    # DIAGNOSTIC: Log EVERY successful update
+                                    logger.error(f"[{request_id}] ✅✅✅ HEARTBEAT #{heartbeat_count} UPDATE SUCCESS ✅✅✅")
+                                    logger.error(f"[{request_id}] ✅ Analysis {analysis_id} updated: {step} {progress}%")
+                                    logger.error(f"[{request_id}] ✅ Update duration: {update_duration:.3f}s")
+                                    logger.error(f"[{request_id}] ✅ Analysis still in memory: {analysis_id in db_service._mock_storage}")
+                                    
+                                    # Verify analysis still exists after update
+                                    if analysis_id not in db_service._mock_storage:
+                                        logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis disappeared IMMEDIATELY after successful update! ❌❌❌")
+                                        logger.error(f"[{request_id}] ❌ Memory storage size: {len(db_service._mock_storage)}")
+                                        logger.error(f"[{request_id}] ❌ Memory analysis IDs: {list(db_service._mock_storage.keys())}")
+                                else:
+                                    logger.error(f"[{request_id}] ❌❌❌ HEARTBEAT #{heartbeat_count} UPDATE FAILED ❌❌❌")
+                                    logger.error(f"[{request_id}] ❌ Update returned False")
+                                    logger.error(f"[{request_id}] ❌ Analysis in memory: {analysis_id in db_service._mock_storage}")
                                     
                                     # CRITICAL: Verify analysis still exists after update
                                     if analysis_id not in db_service._mock_storage:

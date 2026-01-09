@@ -703,20 +703,52 @@ class AzureSQLService:
         after we've confirmed the file doesn't have the data.
         """
         if self._use_mock:
-            file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+            import os
+            import threading
+            import time as time_module
             
-            logger.info(f"🔍 GET: Frontend polling for analysis {analysis_id} - checking storage file: {file_path}")
-            logger.info(f"🔍 GET: Current in-memory storage has {len(AzureSQLService._mock_storage)} analyses: {list(AzureSQLService._mock_storage.keys())}")
-            logger.info(f"🔍 GET: File exists: {os.path.exists(file_path)}")
-            if os.path.exists(file_path):
-                file_size = os.path.getsize(file_path)
-                logger.info(f"🔍 GET: File size: {file_size} bytes")
+            # DIAGNOSTIC: Get process/thread info for debugging multi-worker issues
+            process_id = os.getpid()
+            thread_id = threading.current_thread().ident
+            thread_name = threading.current_thread().name
+            timestamp = time_module.time()
+            
+            file_path = os.path.abspath(AzureSQLService._mock_storage_file)
+            file_exists = os.path.exists(file_path)
+            file_size = os.path.getsize(file_path) if file_exists else 0
+            file_mtime = os.path.getmtime(file_path) if file_exists else 0
+            file_age = timestamp - file_mtime if file_exists else 0
+            
+            # DIAGNOSTIC: Comprehensive state logging
+            logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS START 🔍🔍🔍")
+            logger.error(f"🔍 Analysis ID: {analysis_id}")
+            logger.error(f"🔍 Process ID: {process_id}, Thread ID: {thread_id}, Thread Name: {thread_name}")
+            logger.error(f"🔍 Timestamp: {timestamp:.6f}")
+            logger.error(f"🔍 In-memory storage size: {len(AzureSQLService._mock_storage)}")
+            logger.error(f"🔍 In-memory analysis IDs: {list(AzureSQLService._mock_storage.keys())}")
+            logger.error(f"🔍 Analysis in memory: {analysis_id in AzureSQLService._mock_storage}")
+            logger.error(f"🔍 File path: {file_path}")
+            logger.error(f"🔍 File exists: {file_exists}")
+            logger.error(f"🔍 File size: {file_size} bytes")
+            logger.error(f"🔍 File age: {file_age:.3f}s")
+            
+            # If analysis is in memory, log its state
+            if analysis_id in AzureSQLService._mock_storage:
+                analysis_state = AzureSQLService._mock_storage[analysis_id]
+                logger.error(f"🔍 In-memory analysis state:")
+                logger.error(f"🔍   Status: {analysis_state.get('status')}")
+                logger.error(f"🔍   Step: {analysis_state.get('current_step')}")
+                logger.error(f"🔍   Progress: {analysis_state.get('step_progress')}%")
+                logger.error(f"🔍   Updated at: {analysis_state.get('updated_at')}")
+                logger.error(f"🔍   Created at: {analysis_state.get('created_at')}")
             
             # CRITICAL: Check in-memory storage FIRST (fastest, works for same-worker requests)
             # In-memory is the source of truth during active processing in the same worker
             if analysis_id in AzureSQLService._mock_storage:
-                logger.info(f"GET: Found analysis {analysis_id} in in-memory storage (fast path)")
-                return AzureSQLService._mock_storage[analysis_id].copy()
+                analysis_data = AzureSQLService._mock_storage[analysis_id].copy()
+                logger.error(f"🔍✅ FOUND in memory - returning immediately")
+                logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS END (SUCCESS - MEMORY) 🔍🔍🔍")
+                return analysis_data
             
             # Strategy 2: Read from file (for cross-worker access or after restart)
             # Multi-worker architecture - file is source of truth across workers
@@ -803,7 +835,15 @@ class AzureSQLService:
                     continue
             
             # Analysis not found after retries
-            logger.warning(f"GET: Analysis not found in mock storage after {max_retries} attempts: {analysis_id}. Available IDs: {list(AzureSQLService._mock_storage.keys())}. Storage file: {AzureSQLService._mock_storage_file}")
+            logger.error(f"🔍❌❌❌ ANALYSIS NOT FOUND AFTER {max_retries} RETRIES ❌❌❌")
+            logger.error(f"🔍 Analysis ID: {analysis_id}")
+            logger.error(f"🔍 Process ID: {process_id}, Thread ID: {thread_id}, Thread Name: {thread_name}")
+            logger.error(f"🔍 In-memory storage size: {len(AzureSQLService._mock_storage)}")
+            logger.error(f"🔍 In-memory analysis IDs: {list(AzureSQLService._mock_storage.keys())}")
+            logger.error(f"🔍 File path: {file_path}")
+            logger.error(f"🔍 File exists: {os.path.exists(file_path)}")
+            logger.error(f"🔍 File size: {os.path.getsize(file_path) if os.path.exists(file_path) else 0} bytes")
+            logger.error(f"🔍 Storage file: {AzureSQLService._mock_storage_file}")
             
             # Check if file exists but wasn't loaded (for debugging)
             file_path = os.path.abspath(AzureSQLService._mock_storage_file)
@@ -845,8 +885,9 @@ class AzureSQLService:
                 except Exception as e:
                     logger.error(f"CRITICAL: Error reading file: {e}", exc_info=True)
             else:
-                logger.warning(f"Storage file does not exist: {file_path}. Directory: {storage_dir}")
+                logger.error(f"🔍 Storage file does not exist: {file_path}. Directory: {storage_dir}")
             
+            logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS END (FAILED - NOT FOUND) 🔍🔍🔍")
             return None
         
         try:

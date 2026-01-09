@@ -277,10 +277,38 @@ export default function AnalysisUpload() {
     
     const poll = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/v1/analysis/${id}`)
+        const pollStartTime = Date.now()
+        const pollUrl = `${API_URL}/api/v1/analysis/${id}`
+        const timeSinceUpload = pollStartTime - startTime
+        
+        // DIAGNOSTIC: Log every poll attempt
+        console.error(`🔍🔍🔍 FRONTEND POLL DIAGNOSTIC 🔍🔍🔍`)
+        console.error(`🔍 Poll attempt for analysis: ${id}`)
+        console.error(`🔍 Poll URL: ${pollUrl}`)
+        console.error(`🔍 Time since upload: ${timeSinceUpload}ms (${(timeSinceUpload/1000).toFixed(1)}s)`)
+        console.error(`🔍 Consecutive 404s: ${consecutive404s}/${maxConsecutive404s}`)
+        console.error(`🔍 Consecutive errors: ${consecutiveErrors}/${maxConsecutiveErrors}`)
+        console.error(`🔍 Current step: ${currentStep}, Progress: ${stepProgress}%`)
+        
+        const response = await fetch(pollUrl)
+        
+        // DIAGNOSTIC: Log response details
+        console.error(`🔍 Response status: ${response.status}`)
+        console.error(`🔍 Response statusText: ${response.statusText}`)
+        console.error(`🔍 Response headers:`, Object.fromEntries(response.headers.entries()))
         
         if (response.status === 404) {
           const timeSinceStart = Date.now() - startTime
+          
+          // DIAGNOSTIC: Detailed 404 logging
+          console.error(`🔍❌❌❌ 404 ERROR DIAGNOSTIC ❌❌❌`)
+          console.error(`🔍 Analysis ID: ${id}`)
+          console.error(`🔍 Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
+          console.error(`🔍 Within grace period: ${timeSinceStart < initialGracePeriod}`)
+          console.error(`🔍 Grace period: ${initialGracePeriod}ms (${(initialGracePeriod/1000).toFixed(1)}s)`)
+          console.error(`🔍 Consecutive 404s: ${consecutive404s + 1}/${maxConsecutive404s}`)
+          console.error(`🔍 Poll URL: ${pollUrl}`)
+          console.error(`🔍 Current step: ${currentStep}, Progress: ${stepProgress}%`)
           
           // In the first few seconds after upload, 404s are more likely due to timing
           // Retry a few times before giving up
@@ -290,21 +318,36 @@ export default function AnalysisUpload() {
             
             if (consecutive404s >= maxConsecutive404s) {
               // After grace period and max retries, give up
-              console.error(`Analysis ${id} not found after ${maxConsecutive404s} attempts within grace period`)
+              console.error(`❌❌❌ ANALYSIS NOT FOUND AFTER ${maxConsecutive404s} ATTEMPTS ❌❌❌`)
+              console.error(`Analysis ID: ${id}`)
+              console.error(`Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
+              console.error(`Poll URL: ${pollUrl}`)
+              console.error(`This indicates the analysis was not created or was lost during processing.`)
+              console.error(`Check backend logs for diagnostic messages starting with 🔍🔍🔍`)
               setStatus('failed')
-              setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
+              setError(`Analysis not found after ${maxConsecutive404s} attempts (${(timeSinceStart/1000).toFixed(1)}s after upload).\n\nDiagnostic Info:\n- Analysis ID: ${id}\n- Time since upload: ${(timeSinceStart/1000).toFixed(1)}s\n- This may happen if:\n  1. The server restarted during processing\n  2. Multi-worker file sync issue\n  3. Analysis was lost during processing\n\nPlease check backend logs for detailed diagnostic messages (look for 🔍🔍🔍) and upload your video again.`)
               setAnalysisId(null) // Clear the stale ID
               return // Stop polling
             }
             
             // Retry with exponential backoff (shorter delays initially)
-            setTimeout(poll, 500 * consecutive404s) // 500ms, 1000ms, 1500ms, 2000ms, 2500ms
+            const retryDelay = 500 * consecutive404s
+            console.error(`🔍 Retrying in ${retryDelay}ms (attempt ${consecutive404s + 1})`)
+            setTimeout(poll, retryDelay) // 500ms, 1000ms, 1500ms, 2000ms, 2500ms
             return
           } else {
             // After grace period, 404 is more likely a real error
+            console.error(`❌❌❌ ANALYSIS NOT FOUND AFTER GRACE PERIOD ❌❌❌`)
+            console.error(`Analysis ID: ${id}`)
+            console.error(`Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
+            console.error(`Grace period: ${initialGracePeriod}ms (${(initialGracePeriod/1000).toFixed(1)}s)`)
+            console.error(`Poll URL: ${pollUrl}`)
+            console.error(`Current step: ${currentStep}, Progress: ${stepProgress}%`)
+            console.error(`This indicates the analysis was lost during processing.`)
+            console.error(`Check backend logs for diagnostic messages starting with 🔍🔍🔍`)
             console.warn(`Analysis ${id} not found after grace period - likely lost after container restart`)
             setStatus('failed')
-            setError(`Analysis not found. This may happen if the server was restarted. Please upload your video again.`)
+            setError(`Analysis not found after ${(timeSinceStart/1000).toFixed(1)}s (grace period: ${(initialGracePeriod/1000).toFixed(1)}s).\n\nDiagnostic Info:\n- Analysis ID: ${id}\n- Last known step: ${currentStep}\n- Last known progress: ${stepProgress}%\n- This likely indicates:\n  1. Analysis was lost during processing\n  2. Multi-worker file sync issue\n  3. Server restart during processing\n\nPlease check backend logs for detailed diagnostic messages (look for 🔍🔍🔍) and upload your video again.`)
             setAnalysisId(null) // Clear the stale ID
             return // Stop polling
           }
