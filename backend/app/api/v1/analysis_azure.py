@@ -252,13 +252,13 @@ async def upload_video(
             logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
             raise StorageError("Failed to create temporary file for upload", details={"error": str(e)})
         
-                # Read file in chunks with size validation
-                # CRITICAL: Use smaller chunks for large files to prevent memory issues
-                # This prevents worker crashes during large file uploads
-                chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
-                chunk_count = 0
-                last_log_time = time.time()
-                try:
+        # Read file in chunks with size validation
+        # CRITICAL: Use smaller chunks for large files to prevent memory issues
+        # This prevents worker crashes during large file uploads
+        chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
+        chunk_count = 0
+        last_log_time = time.time()
+        try:
                     while True:
                         chunk = await file.read(chunk_size)
                         if not chunk:
