@@ -465,6 +465,7 @@ class AzureSQLService:
                 logger.error("Analysis data missing 'id' field")
                 return False
             
+            # CRITICAL: Store in in-memory storage FIRST (source of truth)
             AzureSQLService._mock_storage[analysis_id] = {
                 'id': analysis_id,
                 'patient_id': analysis_data.get('patient_id'),
@@ -478,9 +479,34 @@ class AzureSQLService:
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
+            
+            logger.error(f"💾💾💾 CREATE: Stored analysis {analysis_id} in MEMORY FIRST 💾💾💾")
+            logger.error(f"💾 In-memory storage size: {len(AzureSQLService._mock_storage)}")
+            logger.error(f"💾 In-memory analysis IDs: {list(AzureSQLService._mock_storage.keys())}")
+            logger.error(f"💾 Analysis in memory: {analysis_id in AzureSQLService._mock_storage}")
+            
             logger.info(f"💾 CREATE: About to save mock storage with {len(AzureSQLService._mock_storage)} analyses. Analysis ID: {analysis_id}")
             self._save_mock_storage()  # Persist to file
             logger.info(f"💾 CREATE: Saved analysis {analysis_id} to file. In-memory storage now has: {list(AzureSQLService._mock_storage.keys())}")
+            
+            # CRITICAL: Verify it's still in memory after save
+            if analysis_id not in AzureSQLService._mock_storage:
+                logger.error(f"💾❌❌❌ CRITICAL: Analysis disappeared from memory after save! ❌❌❌")
+                logger.error(f"💾 Re-adding to memory...")
+                AzureSQLService._mock_storage[analysis_id] = {
+                    'id': analysis_id,
+                    'patient_id': analysis_data.get('patient_id'),
+                    'filename': analysis_data.get('filename'),
+                    'video_url': analysis_data.get('video_url'),
+                    'status': analysis_data.get('status', 'processing'),
+                    'current_step': analysis_data.get('current_step', 'pose_estimation'),
+                    'step_progress': analysis_data.get('step_progress', 0),
+                    'step_message': analysis_data.get('step_message', 'Initializing...'),
+                    'metrics': analysis_data.get('metrics', {}),
+                    'created_at': datetime.now().isoformat(),
+                    'updated_at': datetime.now().isoformat()
+                }
+                logger.error(f"💾✅ Re-added analysis to memory")
             
             # CRITICAL: Verify the save worked by checking in-memory storage
             # The in-memory storage should be the source of truth immediately after save
