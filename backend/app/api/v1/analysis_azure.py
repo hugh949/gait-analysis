@@ -1544,8 +1544,8 @@ async def process_analysis_azure(
             if not analysis_result:
                 raise ValueError("Analysis result is None")
             
-        raw_metrics = analysis_result.get('metrics', {})
-        
+            raw_metrics = analysis_result.get('metrics', {})
+            
             if not raw_metrics:
                 logger.warning(
                     f"[{request_id}] Analysis result has no metrics, using fallback",
@@ -1576,7 +1576,7 @@ async def process_analysis_azure(
                     )
                     return default
             
-        metrics = {
+            metrics = {
                 'cadence': safe_get_metric('cadence', 0.0),
                 'step_length': safe_get_metric('step_length', 0.0),  # in mm
                 'walking_speed': safe_get_metric('walking_speed', 0.0),  # in mm/s
