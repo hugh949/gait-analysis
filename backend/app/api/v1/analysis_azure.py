@@ -1425,14 +1425,14 @@ async def process_analysis_azure(
             logger.error(f"[{request_id}] 🎬 FPS: {fps}, View type: {view_type}")
             logger.error(f"[{request_id}] 🎬 Progress callback available: {progress_callback is not None}")
             
-        analysis_result = await gait_service.analyze_video(
-            video_path,
-            fps=fps,
-            reference_length_mm=reference_length_mm,
-            view_type=view_type,
-            progress_callback=progress_callback
-        )
-        
+            analysis_result = await gait_service.analyze_video(
+                video_path,
+                fps=fps,
+                reference_length_mm=reference_length_mm,
+                view_type=view_type,
+                progress_callback=progress_callback
+            )
+            
             # Stop periodic monitoring
             heartbeat_monitor_task.cancel()
             try:
