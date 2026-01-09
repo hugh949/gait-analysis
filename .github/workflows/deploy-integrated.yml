@@ -460,7 +460,7 @@ jobs:
           --name ${{ env.AZURE_WEBAPP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
           --settings \
-            WEBSITES_WORKER_PROCESSES=4 \
+            WEBSITES_WORKER_PROCESSES=1 \
             WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
             SCM_COMMAND_IDLE_TIMEOUT=600 \
           --output none

@@ -466,6 +466,10 @@ class GaitAnalysisService:
             
             if frame_count % frame_skip != 0:
                 frame_count += 1
+                # STABILITY MODE: Yield control more frequently to allow heartbeat thread to run
+                # Every 5 frames, yield for 2ms to prevent heartbeat starvation
+                if frame_count % 5 == 0:
+                    time.sleep(0.002)  # 2ms yield every 5 frames
                 if progress_callback and frame_count % 10 == 0:
                     progress = min(50, int((frame_count / total_frames) * 50))
                     try:

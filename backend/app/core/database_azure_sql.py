@@ -335,10 +335,10 @@ class AzureSQLService:
             except Exception as e:
                 logger.warning(f"SAVE: Could not sync file (may cause visibility delay): {e}")
             
-            # CRITICAL: Minimal delay for filesystem visibility
-            # Reduced from 200ms to 10ms for faster heartbeat performance
-            # The fsync operations above should be sufficient for most cases
-            time.sleep(0.01)  # 10ms delay - minimal but allows filesystem to catch up
+            # STABILITY MODE: Increased delay for filesystem visibility
+            # Increased to 50ms to ensure file is fully synced before next operation
+            # This is critical for multi-worker scenarios where file visibility is essential
+            time.sleep(0.05)  # 50ms delay - ensures filesystem sync completes
             
             analysis_ids = list(AzureSQLService._mock_storage.keys())
             logger.info(f"💾 SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}")

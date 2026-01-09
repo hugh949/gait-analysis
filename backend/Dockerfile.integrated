@@ -105,5 +105,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # --timeout-keep-alive: Keep connections alive for 10 minutes (600s)
 # --timeout-graceful-shutdown: Allow 30s for graceful shutdown
 # Note: Azure App Service request timeout should also be increased via app settings
-CMD uvicorn main_integrated:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 600 --timeout-graceful-shutdown 30 --workers ${WEBSITES_WORKER_PROCESSES:-4}
+# STABILITY MODE: Use single worker to avoid multi-worker file sync issues
+# This makes processing slower but MUCH more stable for long-running video analysis
+# The user requested stability over speed to ensure completion
+CMD uvicorn main_integrated:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 600 --timeout-graceful-shutdown 30 --workers ${WEBSITES_WORKER_PROCESSES:-1}
 
