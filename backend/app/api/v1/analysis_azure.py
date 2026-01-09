@@ -1865,10 +1865,10 @@ async def process_analysis_azure(
             exc_info=True
         )
         try:
-        await db_service.update_analysis(analysis_id, {
-            'status': 'failed',
-            'step_message': error_msg
-        })
+            await db_service.update_analysis(analysis_id, {
+                'status': 'failed',
+                'step_message': error_msg
+            })
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to update analysis status: {db_err}")
     
