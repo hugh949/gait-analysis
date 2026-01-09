@@ -1574,8 +1574,8 @@ async def process_analysis_azure(
             if not analysis_result:
                 raise ValueError("Analysis result is None")
             
-        raw_metrics = analysis_result.get('metrics', {})
-        
+            raw_metrics = analysis_result.get('metrics', {})
+            
             if not raw_metrics:
                 logger.warning(
                     f"[{request_id}] Analysis result has no metrics, using fallback",
