@@ -766,10 +766,11 @@ async def process_analysis_azure(
             logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {thread_id}, Name: {thread_name}")
             try:
                 while not heartbeat_stop_event.is_set():
-                    # CRITICAL: Very frequent updates during long processing
-                    # Every 1 second for first 5 minutes (300 heartbeats), then every 2 seconds
+                    # CRITICAL: VERY frequent updates during long processing
+                    # Every 0.5 seconds for first 10 minutes (1200 heartbeats), then every 1 second
                     # This ensures the analysis is ALWAYS visible across workers during video processing
-                    sleep_time = 1 if heartbeat_count < 300 else 2
+                    # More frequent updates = better persistence during CPU-intensive processing
+                    sleep_time = 0.5 if heartbeat_count < 1200 else 1.0
                     is_alive = threading.current_thread().is_alive()
                     logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Waiting {sleep_time}s before heartbeat #{heartbeat_count + 1} (thread alive: {is_alive}, thread ID: {thread_id})")
                     # Use timeout to ensure we wake up even if event is never set
