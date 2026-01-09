@@ -739,7 +739,7 @@ async def process_analysis_azure(
         # Get gait analysis service with error handling
         try:
             gait_service = get_gait_analysis_service()
-        if not gait_service:
+            if not gait_service:
             error_msg = (
                 "Gait analysis service is not available. "
                     "Required dependencies (OpenCV, MediaPipe) may not be installed."
