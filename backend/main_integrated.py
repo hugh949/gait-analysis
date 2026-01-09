@@ -399,12 +399,14 @@ if FRONTEND_DIR.exists():
         4. If an API route doesn't match, this will catch it (which is fine for 404s)
         """
         request_id = getattr(request.state, 'request_id', 'unknown')
-        logger.debug(f"[{request_id}] SPA route called: {full_path}")
+        logger.debug(f"[{request_id}] SPA route called: {full_path}, method: {request.method}")
         
         # CRITICAL: First check if this is an API route - if so, return 404 (not 405)
         # This prevents the catch-all from interfering with API routes
         if full_path.startswith("api/"):
-            logger.warning(f"[{request_id}] API route caught by catch-all: {full_path} - returning 404 (route not found)")
+            logger.error(f"[{request_id}] ❌ API route caught by catch-all: {request.method} {full_path}")
+            logger.error(f"[{request_id}] ❌ This indicates the API route was not properly matched!")
+            logger.error(f"[{request_id}] ❌ Registered routes: {[f'{list(r.methods) if hasattr(r, \"methods\") else \"?\"} {r.path if hasattr(r, \"path\") else \"?\"}' for r in app.routes if hasattr(r, 'path')]}")
             return JSONResponse(
                 status_code=404,
                 content={"error": "API route not found", "path": full_path, "method": request.method, "message": "The API route was not found. Check that the route is properly registered."}
