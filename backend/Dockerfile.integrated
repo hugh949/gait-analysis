@@ -65,6 +65,10 @@ RUN python -c "import mediapipe as mp; print('✓ MediaPipe imported'); attrs = 
 COPY app/ ./app/
 COPY main_integrated.py .
 
+# Copy web.config for Azure App Service request timeout configuration
+# This increases the request timeout from default 230s to 600s (10 minutes)
+COPY web.config ./web.config
+
 # Copy frontend build (must be built and copied to backend/frontend-dist before Docker build)
 # Create directory first, then copy files individually to avoid ACR layer issues
 RUN mkdir -p ./frontend/dist
