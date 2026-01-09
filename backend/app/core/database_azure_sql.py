@@ -9,6 +9,7 @@ from loguru import logger
 import os
 import json
 import time
+import threading
 
 # File locking (optional - may not be available on all systems)
 try:
