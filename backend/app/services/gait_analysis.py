@@ -597,14 +597,14 @@ class GaitAnalysisService:
             
             frame_count += 1
             
-            # CRITICAL: Yield control periodically to allow heartbeat thread and other tasks to run
+            # CRITICAL: Yield control EVERY frame to allow heartbeat thread and other tasks to run
             # This prevents the CPU-intensive loop from starving the heartbeat thread
-            if frame_count % 10 == 0:  # Yield every 10 frames
-                try:
-                    # Use time.sleep to yield to other threads
-                    time.sleep(0.001)  # 1ms sleep - negligible but allows thread scheduling
-                except Exception:
-                    pass  # Ignore sleep errors, continue processing
+            # Even a tiny 0.5ms sleep allows the OS to schedule other threads
+            try:
+                # Use time.sleep to yield to other threads - EVERY frame for maximum responsiveness
+                time.sleep(0.0005)  # 0.5ms sleep - negligible but allows thread scheduling
+            except Exception:
+                pass  # Ignore sleep errors, continue processing
             
             if progress_callback and frame_count % 5 == 0:
                     progress = min(50, int((frame_count / total_frames) * 50))

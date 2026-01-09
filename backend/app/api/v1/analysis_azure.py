@@ -871,15 +871,15 @@ async def process_analysis_azure(
             
             logger.info(f"[{request_id}] 🔄 THREAD-BASED HEARTBEAT STARTED for analysis {analysis_id}")
             logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {thread_id}, Name: {thread_name}")
-            logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Running with ULTRA-FREQUENT updates (every 0.2s)")
+            logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Running with MAXIMUM-FREQUENCY updates (every 0.1s = 10 times/second)")
             
             try:
                 while not heartbeat_stop_event.is_set():
                     # CRITICAL: ULTRA-FREQUENT updates during long processing
-                    # Every 0.2 seconds (5 times per second) for maximum persistence
+                    # Every 0.1 seconds (10 times per second) for MAXIMUM persistence
                     # This ensures the analysis is ALWAYS visible across workers during CPU-intensive processing
                     # Even if one update is slow, the next one will happen very soon
-                    sleep_time = 0.2  # Always 0.2 seconds - maximum frequency
+                    sleep_time = 0.1  # Always 0.1 seconds - MAXIMUM frequency (10 updates per second)
                     heartbeat_stop_event.wait(sleep_time)
                     if heartbeat_stop_event.is_set():
                         logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Stop event set, exiting loop (heartbeat count: {heartbeat_count})")
@@ -889,9 +889,9 @@ async def process_analysis_azure(
                     current_time = time.time()
                     time_since_last_success = current_time - last_successful_update
                     
-                    # Log every 10 heartbeats (every 2 seconds) to avoid spam
-                    if heartbeat_count % 10 == 0:
-                        logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Heartbeat #{heartbeat_count} (time since last success: {time_since_last_success:.2f}s)")
+                    # Log every 5 heartbeats (every 0.5 seconds) for better visibility
+                    if heartbeat_count % 5 == 0:
+                        logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT #{heartbeat_count}: Running (time since last success: {time_since_last_success:.2f}s)")
                     
                     try:
                         # CRITICAL: Use sync method to update analysis (works from threads)
@@ -942,7 +942,7 @@ async def process_analysis_azure(
                                 
                                 if update_success:
                                     last_successful_update = time.time()
-                                    if heartbeat_count % 50 == 0:  # Log every 50 heartbeats (every 10 seconds)
+                                    if heartbeat_count % 20 == 0:  # Log every 20 heartbeats (every 2 seconds) for better visibility
                                         logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Analysis {analysis_id} updated ({step} {progress}%, took {update_duration:.3f}s)")
                                     
                                     # CRITICAL: Verify analysis still exists after update
@@ -1012,7 +1012,7 @@ async def process_analysis_azure(
         heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=False, name=f"heartbeat-{analysis_id[:8]}")
         heartbeat_thread.start()
         logger.info(f"[{request_id}] ✅ Started NON-DAEMON thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident}, name: {heartbeat_thread.name})")
-        logger.info(f"[{request_id}] ✅ Heartbeat thread will run with ULTRA-FREQUENT updates (every 0.2s) to ensure persistence")
+        logger.info(f"[{request_id}] ✅ Heartbeat thread will run with MAXIMUM-FREQUENCY updates (every 0.1s = 10 times/second) to ensure persistence")
         
         # Progress callback that maps internal progress to UI steps with error handling
         async def progress_callback(progress_pct: int, message: str) -> None:
