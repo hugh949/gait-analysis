@@ -372,25 +372,24 @@ async def upload_video(
                     logger.info(f"[{request_id}] Mock mode: Using temp file directly")
                 elif video_url:
                     # Real storage - clean up temp file
-                    pass  # Temp file will be cleaned up in finally block
                     try:
                         os.unlink(tmp_path)
                         tmp_path = None
                         logger.debug(f"[{request_id}] Cleaned up temp file after blob upload")
                     except OSError as e:
                         logger.warning(f"[{request_id}] Failed to clean up temp file: {e}")
-            except Exception as e:
-                logger.error(f"[{request_id}] Error uploading to storage: {e}", exc_info=True)
-                if tmp_path and os.path.exists(tmp_path):
-                    try:
-                        os.unlink(tmp_path)
-                    except:
-                        pass
-                raise StorageError("Failed to upload file to storage", details={"error": str(e)})
+        except Exception as e:
+            logger.error(f"[{request_id}] Error uploading to storage: {e}", exc_info=True)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+            raise StorageError("Failed to upload file to storage", details={"error": str(e)})
         
         # Store metadata in Azure SQL Database
         try:
-        analysis_data = {
+            analysis_data = {
             'id': analysis_id,
             'patient_id': patient_id,
             'filename': file.filename,
