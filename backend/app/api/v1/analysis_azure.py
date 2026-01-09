@@ -381,10 +381,10 @@ async def upload_video(
         except Exception as e:
             logger.error(f"[{request_id}] Error uploading to storage: {e}", exc_info=True)
             if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
             raise StorageError("Failed to upload file to storage", details={"error": str(e)})
         
         # Store metadata in Azure SQL Database
