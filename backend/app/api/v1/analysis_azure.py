@@ -313,10 +313,10 @@ async def upload_video(
                             "chunks": chunk_count
                         }
                     )
-            
-            # CRITICAL: Warn if upload is approaching timeout
-            if upload_duration > 200:  # 200 seconds - very close to 230s timeout
-                logger.error(
+                    
+                    # CRITICAL: Warn if upload is approaching timeout
+                    if upload_duration > 200:  # 200 seconds - very close to 230s timeout
+                        logger.error(
                     f"[{request_id}] ⚠️ CRITICAL: Upload took {upload_duration:.1f}s (Azure timeout is 230s). "
                     f"File may have timed out. Size: {file_size / (1024*1024):.1f}MB"
                 )
