@@ -54,6 +54,14 @@ COPY requirements.txt .
 # This is the slowest step, but cached when only code changes
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Verify critical dependencies are installed (fail build if missing)
+# This ensures fastapi, uvicorn, and other core dependencies are available
+RUN python -c "import fastapi; print('✓ FastAPI', fastapi.__version__)" || (echo "❌ CRITICAL: FastAPI not installed!" && exit 1)
+RUN python -c "import uvicorn; print('✓ Uvicorn', uvicorn.__version__)" || (echo "❌ CRITICAL: Uvicorn not installed!" && exit 1)
+RUN python -c "import pydantic; print('✓ Pydantic', pydantic.__version__)" || (echo "❌ CRITICAL: Pydantic not installed!" && exit 1)
+RUN python -c "import loguru; print('✓ Loguru', loguru.__version__)" || (echo "❌ CRITICAL: Loguru not installed!" && exit 1)
+RUN python -c "print('✓ Core dependencies verified')"
+
 # Verify MediaPipe installation (non-blocking - app handles fallback gracefully)
 # MediaPipe may not expose 'solutions' immediately in some Docker environments
 # The application code already handles this case with fallback to dummy keypoints

@@ -282,6 +282,16 @@ jobs:
         # ACR automatically caches Docker layers - unchanged layers are reused
         # This significantly speeds up builds when only code changes
         # System deps and pip packages are cached if requirements.txt unchanged
+        # CRITICAL: Build context is the backend directory (.)
+        # This ensures requirements.txt, Dockerfile.integrated, and all app files are in the build context
+        echo "🔍 Build context verification:"
+        echo "   Current directory: $(pwd)"
+        echo "   Dockerfile exists: $([ -f Dockerfile.integrated ] && echo 'YES' || echo 'NO')"
+        echo "   requirements.txt exists: $([ -f requirements.txt ] && echo 'YES' || echo 'NO')"
+        echo "   main_integrated.py exists: $([ -f main_integrated.py ] && echo 'YES' || echo 'NO')"
+        echo "   app/ directory exists: $([ -d app ] && echo 'YES' || echo 'NO')"
+        echo "   frontend-dist/ exists: $([ -d frontend-dist ] && echo 'YES' || echo 'NO')"
+        
         if ! az acr build \
           --registry ${{ env.ACR_NAME }} \
           --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
@@ -299,6 +309,7 @@ jobs:
           echo "   - Frontend build not found (frontend-dist/)"
           echo "   - Dockerfile syntax errors"
           echo "   - ACR authentication issues"
+          echo "   - Dependencies not installed (check pip install logs)"
           exit 1
         fi
           
@@ -544,6 +555,12 @@ jobs:
             if echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "FileResponse.*not defined\|NameError.*FileResponse"; then
               LAST_ERROR="FileResponse import missing - deployment may not have updated. Code needs to be rebuilt."
               echo "   ❌ Check $i/10... Found FileResponse error - code may not be updated"
+            elif echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "No module named 'fastapi'\|ModuleNotFoundError.*fastapi"; then
+              LAST_ERROR="FastAPI not installed - dependencies may not have been installed during Docker build. Check Dockerfile and requirements.txt."
+              echo "   ❌ Check $i/10... Found FastAPI import error - dependencies not installed"
+            elif echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "No module named\|ModuleNotFoundError"; then
+              LAST_ERROR="Python module not found - check Dockerfile pip install step and requirements.txt"
+              echo "   ❌ Check $i/10... Found module import error"
               echo "   This indicates the old code is still running. The new image may not have been pulled."
               if [ "$i" -eq 3 ]; then
                 echo "   🔄 Attempting to force container restart..."
