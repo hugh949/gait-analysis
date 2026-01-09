@@ -230,6 +230,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 if MIDDLEWARE_AVAILABLE:
     app.add_middleware(RequestLoggingMiddleware)
     logger.info("✓ Request logging middleware enabled")
+    
+    # Add SPA routing middleware to handle 404s for frontend routes
+    # This runs AFTER route matching, so it only handles 404s
+    # CRITICAL: This never interferes with API routes because:
+    # 1. API routes will match and return 200/400/500 (not 404)
+    # 2. Only 404s on GET requests to non-API routes are handled
+    if SPARoutingMiddleware and FRONTEND_DIR.exists():
+        app.add_middleware(SPARoutingMiddleware, frontend_dir=FRONTEND_DIR)
+        logger.info("✓ SPA routing middleware enabled")
 
 # CORS middleware
 # For integrated app, allow same-origin requests (relative URLs)
@@ -388,76 +397,10 @@ if FRONTEND_DIR.exists():
             return FileResponse(favicon_path)
         return {"error": "Not found"}
     
-    # CRITICAL: Register common frontend routes explicitly to avoid catch-all conflicts
-    # This prevents the catch-all from interfering with API routes
-    @app.get("/upload")
-    async def serve_upload_page(request: Request):
-        """Serve upload page"""
-        return await serve_spa_page(request, "upload")
-    
-    @app.get("/results")
-    async def serve_results_page(request: Request):
-        """Serve results page"""
-        return await serve_spa_page(request, "results")
-    
-    @app.get("/history")
-    async def serve_history_page(request: Request):
-        """Serve history page"""
-        return await serve_spa_page(request, "history")
-    
-    async def serve_spa_page(request: Request, path: str = ""):
-        """Helper function to serve SPA pages"""
-        request_id = getattr(request.state, 'request_id', 'unknown')
-        index_path = FRONTEND_DIR / "index.html"
-        if index_path.exists():
-            try:
-                file_size = index_path.stat().st_size
-                logger.debug(f"[{request_id}] Serving index.html for SPA route {path} (size: {file_size} bytes)")
-                return FileResponse(
-                    index_path,
-                    media_type="text/html; charset=utf-8",
-                    headers={
-                        "Cache-Control": "no-cache, no-store, must-revalidate",
-                        "Pragma": "no-cache",
-                        "Expires": "0"
-                    }
-                )
-            except Exception as e:
-                logger.error(f"[{request_id}] Error serving index.html: {e}", exc_info=True)
-                return JSONResponse(
-                    status_code=500,
-                    content={"error": "Failed to serve frontend", "message": str(e)}
-                )
-        return JSONResponse(
-            status_code=404,
-            content={"error": "Frontend not found", "path": str(index_path)}
-        )
-    
-    # CRITICAL: Catch-all route ONLY for GET requests to non-API, non-asset routes
-    # This is registered LAST and should only match if no other route matches
-    # IMPORTANT: FastAPI should match API routes first, so this should never match API routes
-    @app.get("/{full_path:path}")
-    async def serve_spa_catchall(request: Request, full_path: str):
-        """
-        Catch-all for SPA routing - ONLY matches GET requests
-        This should NEVER match API routes because:
-        1. API routes are registered first and are more specific
-        2. FastAPI matches routes in order of registration
-        3. This route only matches GET requests
-        """
-        request_id = getattr(request.state, 'request_id', 'unknown')
-        
-        # CRITICAL: Explicitly exclude API routes and assets
-        if full_path.startswith("api/") or full_path.startswith("assets/"):
-            # This should never happen, but if it does, return 404
-            logger.error(f"[{request_id}] ❌ CRITICAL: {full_path} caught by catch-all - this should not happen!")
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Route not found", "path": full_path}
-            )
-        
-        # Serve index.html for React SPA routing
-        return await serve_spa_page(request, full_path)
+    # CRITICAL: Use middleware-based SPA routing instead of catch-all route
+    # This prevents any conflicts with API routes
+    # The SPARoutingMiddleware handles 404s for GET requests to non-API routes
+    # No catch-all route needed - middleware handles it after route matching
 
 
 if __name__ == "__main__":
