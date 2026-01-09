@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import AnalysisUpload from './pages/AnalysisUpload'
 import ViewGait from './pages/ViewGait'
 import Report from './pages/Report'
+import Testing from './pages/Testing'
 
 function App() {
   return (
@@ -22,6 +23,11 @@ function App() {
         <Route path="/report/:analysisId" element={
           <Layout>
             <Report />
+          </Layout>
+        } />
+        <Route path="/testing" element={
+          <Layout>
+            <Testing />
           </Layout>
         } />
       </Routes>

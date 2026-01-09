@@ -29,6 +29,12 @@ export default function Layout({ children }: LayoutProps) {
             >
               View Gait
             </Link>
+            <Link 
+              to="/testing" 
+              className={location.pathname === '/testing' ? 'active' : ''}
+            >
+              🧪 Testing
+            </Link>
           </nav>
         </div>
       </header>
