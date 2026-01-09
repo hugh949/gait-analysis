@@ -282,10 +282,43 @@ class GaitAnalysisService:
             reference_length_mm: Reference length in mm for scale calibration
             view_type: Camera view type (front, side, etc.)
             progress_callback: Optional async callback(progress_pct, message)
+            analysis_id: Optional analysis ID for checkpoint management
         
         Returns:
             Dictionary with keypoints, 3D poses, and gait metrics
         """
+        # Store analysis_id for checkpoint management
+        self._current_analysis_id = analysis_id or 'unknown'
+        
+        # Check for existing checkpoints
+        if analysis_id:
+            try:
+                from app.services.checkpoint_manager import CheckpointManager
+                checkpoint_manager = CheckpointManager(analysis_id=analysis_id)
+                completed_steps = checkpoint_manager.get_completed_steps()
+                logger.info(f"📂 Checkpoint status: {completed_steps}")
+                
+                # If Step 3 is complete, we can skip to report generation
+                if completed_steps.get('step_3_metrics_calculation', False):
+                    logger.info("✅ Found Step 3 checkpoint - loading metrics for report generation")
+                    step3_data = checkpoint_manager.load_step_3()
+                    if step3_data:
+                        return {
+                            "status": "completed",
+                            "analysis_type": "advanced_gait_analysis_v2_professional",
+                            "metrics": step3_data['metrics'],
+                            "keypoints_3d": step3_data['frames_3d_keypoints'][:10],
+                            "steps_completed": {
+                                "step_1_pose_estimation": True,
+                                "step_2_3d_lifting": True,
+                                "step_3_metrics_calculation": True,
+                                "step_4_report_generation": True
+                            },
+                            "from_checkpoint": True
+                        }
+            except Exception as e:
+                logger.warning(f"⚠️ Checkpoint check failed (non-critical): {e}")
+        
         if progress_callback:
             await progress_callback(0, "Opening video file...")
         
@@ -648,6 +681,21 @@ class GaitAnalysisService:
             raise PoseEstimationError(error_msg)
         
         logger.info(f"Detected poses in {len(frames_2d_keypoints)} frames")
+        
+        # CRITICAL: Save Step 1 checkpoint before proceeding to Step 2
+        try:
+            from app.services.checkpoint_manager import CheckpointManager
+            checkpoint_manager = CheckpointManager(analysis_id=getattr(self, '_current_analysis_id', 'unknown'))
+            checkpoint_manager.save_step_1(
+                frames_2d_keypoints=frames_2d_keypoints,
+                frame_timestamps=frame_timestamps,
+                total_frames=total_frames,
+                video_fps=video_fps,
+                processing_stats={'frames_processed': len(frames_2d_keypoints), 'total_frames': total_frames}
+            )
+            logger.info("✅ Step 1 checkpoint saved - can resume from here if needed")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save Step 1 checkpoint (non-critical): {e}")
         
         # STEP 1 (continued): Apply advanced signal processing for maximum accuracy
         # CRITICAL: Wrap in try-except to ensure processing continues even if filtering fails

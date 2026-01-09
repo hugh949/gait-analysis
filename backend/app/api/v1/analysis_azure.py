@@ -1460,7 +1460,8 @@ async def process_analysis_azure(
                 fps=fps,
                 reference_length_mm=reference_length_mm,
                 view_type=view_type,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                analysis_id=analysis_id  # Pass analysis_id for checkpoint management
             )
             
             # Stop periodic monitoring
