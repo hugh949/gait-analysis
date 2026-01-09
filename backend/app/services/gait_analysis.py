@@ -324,9 +324,15 @@ class GaitAnalysisService:
         monitor_task = asyncio.create_task(monitor_progress())
         
         try:
-            logger.info(f"🎬 Starting video processing for: {video_path}")
-            logger.info(f"🎬 Waiting for video processing to complete (timeout: 3600s)...")
-            result = await asyncio.wait_for(process_task, timeout=3600.0)
+        logger.info("=" * 80)
+        logger.info(f"🎬 ========== STARTING VIDEO PROCESSING ==========")
+        logger.info(f"🎬 Video path: {video_path}")
+        logger.info(f"🎬 FPS: {fps}, View type: {view_type}, Reference length: {reference_length_mm}mm")
+        logger.info(f"🎬 Timeout: 3600s (60 minutes)")
+        logger.info(f"🎬 Waiting for video processing to complete...")
+        logger.info("=" * 80)
+        
+        result = await asyncio.wait_for(process_task, timeout=3600.0)
             processing_done.set()
             
             # CRITICAL: Validate result before returning
@@ -454,51 +460,80 @@ class GaitAnalysisService:
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     logger.debug(f"🖼️ Frame {frame_count}: Converted BGR to RGB (shape: {rgb_frame.shape})")
                     
-                    # Create MediaPipe Image - use VisionImage if available, otherwise use numpy array directly
-                    # CRITICAL: Handle ImageFormat being None gracefully
+                    # Create MediaPipe Image - CRITICAL: Must use proper VisionImage object
+                    # MediaPipe 0.10.x detect_for_video requires VisionImage, not numpy array
                     mp_image = None
+                    vision_image_created = False
+                    
                     if VisionImage:
-                        try:
-                            if ImageFormat:
-                                # Use ImageFormat if available
-                                logger.debug(f"🖼️ Frame {frame_count}: Creating VisionImage with ImageFormat.SRGB")
+                        # Try multiple methods to create VisionImage
+                        # Method 1: Try with ImageFormat enum (if available)
+                        if ImageFormat:
+                            try:
+                                # Get the SRGB enum value
+                                if hasattr(ImageFormat, 'SRGB'):
+                                    image_format_enum = ImageFormat.SRGB
+                                elif hasattr(ImageFormat, 'sRGB'):
+                                    image_format_enum = ImageFormat.sRGB
+                                else:
+                                    # Try integer value 1 (SRGB is typically 1)
+                                    image_format_enum = 1
+                                
+                                logger.debug(f"🖼️ Frame {frame_count}: Creating VisionImage with ImageFormat enum: {image_format_enum}")
                                 mp_image = VisionImage(
-                                    image_format=ImageFormat.SRGB,
+                                    image_format=image_format_enum,
                                     data=rgb_frame
                                 )
-                                logger.debug(f"✅ Frame {frame_count}: VisionImage created successfully with ImageFormat")
-                            else:
-                                # ImageFormat not available - try without it or use alternative
-                                # Some MediaPipe versions accept data directly
-                                try:
-                                    # Try with just data (MediaPipe may infer format)
-                                    logger.debug(f"🖼️ Frame {frame_count}: Creating VisionImage without ImageFormat (data only)")
+                                vision_image_created = True
+                                logger.debug(f"✅ Frame {frame_count}: VisionImage created successfully with ImageFormat enum")
+                            except Exception as enum_err:
+                                logger.debug(f"🖼️ Frame {frame_count}: ImageFormat enum method failed: {enum_err}")
+                        
+                        # Method 2: Try with integer format value (SRGB = 1)
+                        if not vision_image_created:
+                            try:
+                                logger.debug(f"🖼️ Frame {frame_count}: Creating VisionImage with integer format (1 = SRGB)")
+                                mp_image = VisionImage(
+                                    image_format=1,  # SRGB format
+                                    data=rgb_frame
+                                )
+                                vision_image_created = True
+                                logger.debug(f"✅ Frame {frame_count}: VisionImage created successfully with integer format")
+                            except Exception as int_err:
+                                logger.debug(f"🖼️ Frame {frame_count}: Integer format method failed: {int_err}")
+                        
+                        # Method 3: Try creating from numpy array directly (MediaPipe may auto-detect)
+                        if not vision_image_created:
+                            try:
+                                # Some MediaPipe versions can create Image from numpy array directly
+                                logger.debug(f"🖼️ Frame {frame_count}: Creating VisionImage from numpy array (auto-detect format)")
+                                # Try using mp.tasks.python.vision.Image.create_from_array if available
+                                if hasattr(vision, 'Image') and hasattr(vision.Image, 'create_from_array'):
+                                    mp_image = vision.Image.create_from_array(rgb_frame)
+                                elif hasattr(VisionImage, 'create_from_array'):
+                                    mp_image = VisionImage.create_from_array(rgb_frame)
+                                else:
+                                    # Last resort: try constructor with just data
                                     mp_image = VisionImage(data=rgb_frame)
-                                    logger.debug(f"✅ Frame {frame_count}: VisionImage created successfully without ImageFormat")
-                                except TypeError as type_err:
-                                    # If that fails, try with SRGB as string or enum value
-                                    try:
-                                        # Try using the string "SRGB" or integer value
-                                        logger.debug(f"🖼️ Frame {frame_count}: Trying VisionImage with string 'SRGB'")
-                                        mp_image = VisionImage(
-                                            image_format="SRGB",  # or try 1, 2, etc. depending on MediaPipe version
-                                            data=rgb_frame
-                                        )
-                                        logger.debug(f"✅ Frame {frame_count}: VisionImage created successfully with string 'SRGB'")
-                                    except (TypeError, ValueError) as str_err:
-                                        # Last resort: try numpy array directly
-                                        logger.warning(f"⚠️ Frame {frame_count}: Could not create VisionImage (TypeError: {type_err}, ValueError: {str_err}) - using numpy array directly")
-                                        mp_image = rgb_frame
-                        except Exception as img_error:
-                            logger.warning(f"⚠️ Frame {frame_count}: Failed to create VisionImage: {type(img_error).__name__}: {img_error}, using numpy array directly")
-                            mp_image = rgb_frame
+                                vision_image_created = True
+                                logger.debug(f"✅ Frame {frame_count}: VisionImage created from numpy array")
+                            except Exception as array_err:
+                                logger.debug(f"🖼️ Frame {frame_count}: Numpy array method failed: {array_err}")
+                        
+                        # If all methods failed, we cannot proceed - raise error
+                        if not vision_image_created or mp_image is None:
+                            error_msg = f"CRITICAL: Could not create VisionImage for frame {frame_count}. MediaPipe requires VisionImage object, not numpy array."
+                            logger.error(f"❌ {error_msg}")
+                            raise ValueError(error_msg)
                     else:
-                        # Fallback: Use numpy array directly (MediaPipe 0.10.x might accept it)
-                        logger.debug(f"🖼️ Frame {frame_count}: VisionImage class not available - using numpy array directly")
-                        mp_image = rgb_frame
+                        # VisionImage class not available - cannot proceed
+                        error_msg = f"CRITICAL: VisionImage class not available. Cannot process frame {frame_count}."
+                        logger.error(f"❌ {error_msg}")
+                        raise ImportError(error_msg)
                     
                     # Process frame with error handling
-                    logger.debug(f"🔍 Frame {frame_count}: Calling pose_landmarker.detect_for_video (timestamp_ms: {timestamp_ms})")
+                    # CRITICAL: mp_image must be a VisionImage object, not numpy array
+                    logger.debug(f"🔍 Frame {frame_count}: Calling pose_landmarker.detect_for_video (timestamp_ms: {timestamp_ms}, image type: {type(mp_image).__name__})")
                     detection_result = self.pose_landmarker.detect_for_video(mp_image, timestamp_ms)
                     logger.debug(f"🔍 Frame {frame_count}: MediaPipe detection complete (result: {type(detection_result).__name__})")
                     
