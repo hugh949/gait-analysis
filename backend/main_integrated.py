@@ -102,15 +102,23 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Gait Analysis Service...")
 
 
-app = FastAPI(
-    title="Gait Analysis Application",
-    description="Integrated clinical-grade gait analysis (API + Frontend)",
-    version="3.0.0",
-    lifespan=lifespan,
-    # CRITICAL: Increase request timeout for large file uploads
-    # This allows large video files to be uploaded without timing out
-    # Note: Azure App Service also has request timeout settings that may need adjustment
-)
+# CRITICAL: Create app with error handling to prevent silent failures
+try:
+    app = FastAPI(
+        title="Gait Analysis Application",
+        description="Integrated clinical-grade gait analysis (API + Frontend)",
+        version="3.0.0",
+        lifespan=lifespan,
+        # CRITICAL: Increase request timeout for large file uploads
+        # This allows large video files to be uploaded without timing out
+        # Note: Azure App Service also has request timeout settings that may need adjustment
+    )
+    logger.info("✓ FastAPI app created successfully")
+except Exception as e:
+    logger.critical(f"CRITICAL: Failed to create FastAPI app: {e}", exc_info=True)
+    # Create minimal app to allow startup
+    app = FastAPI(title="Gait Analysis Application", version="3.0.0")
+    logger.warning("Using minimal FastAPI app - some features may be unavailable")
 
 # Import custom exceptions for global handling
 try:
