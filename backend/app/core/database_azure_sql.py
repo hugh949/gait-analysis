@@ -36,6 +36,11 @@ class AzureSQLService:
         "/home/site/gait_analysis_mock_storage.json"  # Hardcoded to /home/site, not $HOME/site
     )
     
+    # File watcher thread for automatic reloading in multi-worker environment
+    _file_watcher_thread: Optional[threading.Thread] = None
+    _file_watcher_stop_event: Optional[threading.Event] = None
+    _last_file_mtime: float = 0.0
+    
     def __init__(self):
         """Initialize Azure SQL Database connection"""
         self.server = os.getenv(
