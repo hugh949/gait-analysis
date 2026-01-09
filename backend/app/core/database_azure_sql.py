@@ -164,7 +164,7 @@ class AzureSQLService:
                             logger.error(f"LOAD: Storage file is still empty after {max_retries} attempts. Preserving in-memory storage.")
                             # CRITICAL: Don't clear in-memory storage - preserve it
                             if not AzureSQLService._mock_storage:
-                            AzureSQLService._mock_storage = {}
+                                AzureSQLService._mock_storage = {}
                             return
                     
                     # Use file locking to prevent race conditions (if available)
