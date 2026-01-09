@@ -261,13 +261,13 @@ async def upload_video(
         try:
             while True:
                 chunk = await file.read(chunk_size)
-            if not chunk:
-                break
+                if not chunk:
+                    break
                 file_size += len(chunk)
                 chunk_count += 1
                 
                 # Write chunk immediately to reduce memory usage
-            tmp_file.write(chunk)
+                tmp_file.write(chunk)
                 
                 # Log progress more frequently for large files (every 5MB or every 5 seconds)
                 current_time = time.time()
