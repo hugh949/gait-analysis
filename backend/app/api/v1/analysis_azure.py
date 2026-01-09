@@ -259,8 +259,8 @@ async def upload_video(
         chunk_count = 0
         last_log_time = time.time()
         try:
-        while True:
-            chunk = await file.read(chunk_size)
+            while True:
+                chunk = await file.read(chunk_size)
             if not chunk:
                 break
                 file_size += len(chunk)
