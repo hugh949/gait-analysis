@@ -1628,9 +1628,9 @@ async def process_analysis_azure(
             try:
                 await db_service.update_analysis(analysis_id, {
                     'current_step': 'report_generation',
-            'step_progress': 95,
-            'step_message': 'Generating analysis report...'
-        })
+                    'step_progress': 95,
+                    'step_message': 'Generating analysis report...'
+                })
                 break  # Success
             except Exception as e:
                 if retry < max_db_retries - 1:
@@ -1705,11 +1705,11 @@ async def process_analysis_azure(
             try:
                 await db_service.update_analysis(analysis_id, {
                     'status': 'completed',
-            'current_step': 'report_generation',
-            'step_progress': 100,
-            'step_message': 'Analysis complete!',
-            'metrics': metrics
-        })
+                    'current_step': 'report_generation',
+                    'step_progress': 100,
+                    'step_message': 'Analysis complete!',
+                    'metrics': metrics
+                })
                 completion_success = True
                 logger.info(
                     f"[{request_id}] Analysis completed successfully",
@@ -1790,10 +1790,10 @@ async def process_analysis_azure(
             exc_info=True
         )
         try:
-        await db_service.update_analysis(analysis_id, {
-            'status': 'failed',
-            'step_message': error_msg
-        })
+            await db_service.update_analysis(analysis_id, {
+                'status': 'failed',
+                'step_message': error_msg
+            })
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to update analysis status after timeout: {db_err}")
     
@@ -1835,10 +1835,10 @@ async def process_analysis_azure(
             exc_info=True
         )
         try:
-        await db_service.update_analysis(analysis_id, {
-            'status': 'failed',
-            'step_message': error_msg
-        })
+            await db_service.update_analysis(analysis_id, {
+                'status': 'failed',
+                'step_message': error_msg
+            })
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to update analysis status: {db_err}")
     
