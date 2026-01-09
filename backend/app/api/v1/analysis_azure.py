@@ -213,13 +213,20 @@ async def upload_video(
         )
     
     # Validate file size (max 500MB)
+    # CRITICAL: Azure App Service has a 230-second (3.8 minute) request timeout
+    # For files larger than ~50MB, upload may timeout
+    # Consider implementing chunked uploads or direct blob storage uploads for larger files
     MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
+    MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024  # 50MB - recommended max to avoid timeout
     file_size = 0
     tmp_path: Optional[str] = None
     video_url: Optional[str] = None
     
     try:
-    
+        # CRITICAL: Check file size early and warn if it might timeout
+        # We can't check file.size directly for streaming uploads, but we can warn after first chunk
+        upload_start_time = time.time()
+        
         # Create temp file with proper error handling
         try:
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
@@ -232,8 +239,9 @@ async def upload_video(
         # Read file in chunks with size validation
         # CRITICAL: Use smaller chunks for large files to prevent memory issues
         # This prevents worker crashes during large file uploads
-        chunk_size = 512 * 1024  # 512KB chunks (reduced from 1MB to prevent memory pressure)
+        chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
         chunk_count = 0
+        last_log_time = time.time()
         try:
             while True:
                 chunk = await file.read(chunk_size)
@@ -242,9 +250,22 @@ async def upload_video(
                 file_size += len(chunk)
                 chunk_count += 1
                 
-                # Log progress for large files (every 10MB)
-                if chunk_count % 20 == 0:  # Every 20 chunks = ~10MB
-                    logger.debug(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read")
+                # Write chunk immediately to reduce memory usage
+                tmp_file.write(chunk)
+                
+                # Log progress more frequently for large files (every 5MB or every 5 seconds)
+                current_time = time.time()
+                if chunk_count % 20 == 0 or (current_time - last_log_time) >= 5.0:  # Every 20 chunks (~5MB) or every 5 seconds
+                    elapsed = current_time - upload_start_time
+                    upload_rate = (file_size / elapsed) / (1024 * 1024) if elapsed > 0 else 0  # MB/s
+                    estimated_total_time = (file_size / upload_rate) if upload_rate > 0 else 0
+                    logger.info(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read ({chunk_count} chunks, {elapsed:.1f}s elapsed, {upload_rate:.2f}MB/s, est. {estimated_total_time:.1f}s total)")
+                    
+                    # Warn if upload is taking too long (approaching 230s timeout)
+                    if elapsed > 180:  # 3 minutes - getting close to 230s timeout
+                        logger.warning(f"[{request_id}] ⚠️ Upload taking longer than expected ({elapsed:.1f}s). Azure timeout is 230s. File may timeout.")
+                    
+                    last_log_time = current_time
                 
                 # Check file size limit
                 if file_size > MAX_FILE_SIZE:
@@ -259,14 +280,32 @@ async def upload_video(
                         field="file",
                         details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
                     )
-                
-                tmp_file.write(chunk)
             
             tmp_file.close()
+            upload_duration = time.time() - upload_start_time
+            upload_rate = (file_size / upload_duration) / (1024 * 1024) if upload_duration > 0 else 0  # MB/s
+            
             logger.info(
                 f"[{request_id}] File uploaded successfully",
-                extra={"filename": file.filename, "size": file_size, "path": tmp_path}
+                extra={
+                    "filename": file.filename,
+                    "size": file_size,
+                    "size_mb": file_size / (1024*1024),
+                    "path": tmp_path,
+                    "upload_duration": upload_duration,
+                    "upload_rate_mbps": upload_rate,
+                    "chunks": chunk_count
+                }
             )
+            
+            # Warn if file is large and might cause processing issues
+            if file_size > MAX_RECOMMENDED_SIZE:
+                logger.warning(
+                    f"[{request_id}] ⚠️ Large file uploaded ({file_size / (1024*1024):.1f}MB). "
+                    f"Upload took {upload_duration:.1f}s. "
+                    f"Azure App Service has a 230-second request timeout. "
+                    f"Consider using smaller files (<50MB) to avoid timeout issues."
+                )
         except ValidationError:
             raise  # Re-raise validation errors
         except Exception as e:
