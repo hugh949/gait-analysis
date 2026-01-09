@@ -406,7 +406,16 @@ if FRONTEND_DIR.exists():
         if full_path.startswith("api/"):
             logger.error(f"[{request_id}] ❌ API route caught by catch-all: {request.method} {full_path}")
             logger.error(f"[{request_id}] ❌ This indicates the API route was not properly matched!")
-            logger.error(f"[{request_id}] ❌ Registered routes: {[f'{list(r.methods) if hasattr(r, \"methods\") else \"?\"} {r.path if hasattr(r, \"path\") else \"?\"}' for r in app.routes if hasattr(r, 'path')]}")
+            # Log registered routes for debugging
+            try:
+                route_info = []
+                for r in app.routes:
+                    if hasattr(r, 'path'):
+                        methods = list(r.methods) if hasattr(r, 'methods') else '?'
+                        route_info.append(f"{methods} {r.path}")
+                logger.error(f"[{request_id}] ❌ Registered routes: {route_info}")
+            except Exception as route_log_error:
+                logger.error(f"[{request_id}] ❌ Could not log routes: {route_log_error}")
             return JSONResponse(
                 status_code=404,
                 content={"error": "API route not found", "path": full_path, "method": request.method, "message": "The API route was not found. Check that the route is properly registered."}
