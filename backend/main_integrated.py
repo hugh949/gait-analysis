@@ -58,6 +58,14 @@ except Exception as e:
 
 try:
     from app.api.v1.analysis_azure import router as analysis_router
+    # Verify router has endpoints registered
+    if hasattr(analysis_router, 'routes') and len(analysis_router.routes) > 0:
+        logger.info(f"✓ Analysis router imported successfully with {len(analysis_router.routes)} routes")
+        for route in analysis_router.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                logger.debug(f"  Route: {list(route.methods)} {route.path}")
+    else:
+        logger.warning("⚠ Analysis router imported but has no routes - endpoints may not be available")
 except Exception as e:
     logger.error(f"Failed to import analysis router: {e}", exc_info=True)
     # Create minimal router to allow app to start

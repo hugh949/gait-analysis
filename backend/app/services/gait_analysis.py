@@ -1679,10 +1679,13 @@ class GaitAnalysisService:
         
         return validation_results
     
-    def _get_mediapipe_model_path(self) -> Optional[str]:
+    def _get_mediapipe_model_path(self, download_if_missing: bool = True) -> Optional[str]:
         """
         Get path to MediaPipe pose landmarker model file
-        Searches multiple locations and attempts to download if not found
+        Searches multiple locations and optionally attempts to download if not found
+        
+        Args:
+            download_if_missing: If True, download model if not found. If False, only search existing locations.
         """
         try:
             import mediapipe as mp
@@ -1750,8 +1753,14 @@ class GaitAnalysisService:
             logger.info(f"Downloading MediaPipe pose landmarker model from: {model_url}")
             logger.info("This may take a few moments...")
             
-            # Download model
-            urllib.request.urlretrieve(model_url, model_path)
+            # Download model with timeout to prevent hanging
+            # CRITICAL: Use timeout to prevent blocking startup if network is slow
+            import socket
+            socket.setdefaulttimeout(30)  # 30 second timeout for download
+            try:
+                urllib.request.urlretrieve(model_url, model_path)
+            finally:
+                socket.setdefaulttimeout(None)  # Reset timeout
             
             if os.path.exists(model_path):
                 file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
