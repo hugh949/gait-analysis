@@ -362,16 +362,16 @@ async def upload_video(
                 logger.warning(f"[{request_id}] Storage service not available, using mock mode")
                 video_url = tmp_path  # Use temp file directly in mock mode
             else:
-        blob_name = f"{analysis_id}{file_ext}"
+                blob_name = f"{analysis_id}{file_ext}"
                 logger.debug(f"[{request_id}] Uploading to blob storage: {blob_name}")
-        video_url = await storage_service.upload_video(tmp_path, blob_name)
-        
+                video_url = await storage_service.upload_video(tmp_path, blob_name)
+                
                 # In mock mode, video_url will be "mock://..." - use temp file directly
                 if video_url and video_url.startswith('mock://'):
-            video_url = tmp_path
+                    video_url = tmp_path
                     logger.info(f"[{request_id}] Mock mode: Using temp file directly")
                 elif video_url:
-            # Real storage - clean up temp file
+                    # Real storage - clean up temp file
                     try:
                         os.unlink(tmp_path)
                         tmp_path = None
