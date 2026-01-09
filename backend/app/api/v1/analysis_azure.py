@@ -755,29 +755,33 @@ async def process_analysis_azure(
         # CRITICAL: Use THREAD-BASED keep-alive that runs independently of async event loop
         # During CPU-intensive processing, async tasks are starved, so we need threads
         last_known_progress = {'step': 'pose_estimation', 'progress': 0, 'message': 'Starting analysis...'}
-        heartbeat_thread = None
         heartbeat_stop_event = threading.Event()
+        heartbeat_thread_ref = {'thread': None}  # Use dict to allow modification from nested function
         
         def thread_based_heartbeat():
             """Thread-based heartbeat that runs independently of async event loop"""
             heartbeat_count = 0
+            thread_id = threading.current_thread().ident
+            thread_name = threading.current_thread().name
             logger.info(f"[{request_id}] 🔄 THREAD-BASED HEARTBEAT STARTED for analysis {analysis_id}")
-            logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {threading.current_thread().ident}, Name: {threading.current_thread().name}")
+            logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Thread ID: {thread_id}, Name: {thread_name}")
             try:
                 while not heartbeat_stop_event.is_set():
                     # CRITICAL: Very frequent updates during long processing
                     # Every 1 second for first 5 minutes (300 heartbeats), then every 2 seconds
                     # This ensures the analysis is ALWAYS visible across workers during video processing
                     sleep_time = 1 if heartbeat_count < 300 else 2
-                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Waiting {sleep_time}s before heartbeat #{heartbeat_count + 1} (thread alive: {heartbeat_thread.is_alive() if heartbeat_thread else False})")
+                    is_alive = threading.current_thread().is_alive()
+                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Waiting {sleep_time}s before heartbeat #{heartbeat_count + 1} (thread alive: {is_alive}, thread ID: {thread_id})")
                     # Use timeout to ensure we wake up even if event is never set
                     heartbeat_stop_event.wait(sleep_time)
                     if heartbeat_stop_event.is_set():
-                        logger.debug(f"[{request_id}] 🔄 THREAD HEARTBEAT: Stop event set, exiting loop")
+                        logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Stop event set, exiting loop (heartbeat count: {heartbeat_count})")
                         break
                     heartbeat_count += 1
                     # CRITICAL: Log at INFO level so we can see heartbeat is running
-                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Starting heartbeat #{heartbeat_count} (thread alive: {heartbeat_thread.is_alive() if heartbeat_thread else False})")
+                    is_alive = threading.current_thread().is_alive()
+                    logger.info(f"[{request_id}] 🔄 THREAD HEARTBEAT: Starting heartbeat #{heartbeat_count} (thread alive: {is_alive}, thread ID: {thread_id})")
                     try:
                         # CRITICAL: Use sync method to update analysis (works from threads)
                         # Check if analysis exists in memory first
@@ -843,9 +847,10 @@ async def process_analysis_azure(
                 logger.error(f"[{request_id}] ❌ Thread heartbeat fatal error: {type(e).__name__}: {e}", exc_info=True)
         
         # Start thread-based heartbeat IMMEDIATELY - before any processing starts
-        heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=True)
+        heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=True, name=f"heartbeat-{analysis_id[:8]}")
+        heartbeat_thread_ref['thread'] = heartbeat_thread
         heartbeat_thread.start()
-        logger.info(f"[{request_id}] ✅ Started thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident})")
+        logger.info(f"[{request_id}] ✅ Started thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident}, name: {heartbeat_thread.name})")
         
         # Progress callback that maps internal progress to UI steps with error handling
         async def progress_callback(progress_pct: int, message: str) -> None:
@@ -1073,7 +1078,8 @@ async def process_analysis_azure(
             
             logger.info(f"[{request_id}] 🎬 STARTING VIDEO ANALYSIS: video_path={video_path}, fps={fps}, view_type={view_type}")
             logger.info(f"[{request_id}] 🎬 Analysis will call progress_callback during processing")
-            logger.info(f"[{request_id}] 🎬 Heartbeat thread is running: {heartbeat_thread and heartbeat_thread.is_alive() if heartbeat_thread else False}")
+            heartbeat_is_alive = heartbeat_thread.is_alive() if heartbeat_thread else False
+            logger.info(f"[{request_id}] 🎬 Heartbeat thread is running: {heartbeat_is_alive} (thread ID: {heartbeat_thread.ident if heartbeat_thread else None})")
             analysis_result = await gait_service.analyze_video(
                 video_path,
                 fps=fps,
@@ -1083,36 +1089,65 @@ async def process_analysis_azure(
             )
             logger.info(f"[{request_id}] ✅ VIDEO ANALYSIS COMPLETE: Got result with keys: {list(analysis_result.keys()) if analysis_result else 'None'}")
             
+            # CRITICAL: Validate that processing actually happened
             if not analysis_result:
-                logger.warning(
-                    f"[{request_id}] Analysis returned empty result, creating fallback result",
-                    extra={"analysis_id": analysis_id, "video_path": video_path}
+                error_msg = "Video analysis returned None - no result generated"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={"analysis_id": analysis_id, "video_path": video_path}
                 )
-                # Create fallback result instead of failing
-                analysis_result = {
-                    'status': 'completed',
-                    'analysis_type': 'fallback_analysis',
-                    'metrics': {
-                        'cadence': 0.0,
-                        'step_length': 0.0,
-                        'walking_speed': 0.0,
-                        'stride_length': 0.0,
-                        'double_support_time': 0.0,
-                        'swing_time': 0.0,
-                        'stance_time': 0.0,
-                        'fallback_metrics': True,
-                        'error': 'Analysis returned empty result'
-                    },
-                    'frames_processed': 0,
-                    'total_frames': 0
-                }
+            
+            # CRITICAL: Validate that frames were actually processed
+            frames_processed = analysis_result.get('frames_processed', 0)
+            total_frames = analysis_result.get('total_frames', 0)
             
             logger.info(
-                f"[{request_id}] Video analysis completed",
+                f"[{request_id}] Video analysis validation: {frames_processed}/{total_frames} frames processed",
                 extra={
                     "analysis_id": analysis_id,
+                    "frames_processed": frames_processed,
+                    "total_frames": total_frames,
                     "has_metrics": "metrics" in analysis_result if analysis_result else False,
                     "result_status": analysis_result.get('status') if analysis_result else None
+                }
+            )
+            
+            if frames_processed == 0:
+                error_msg = f"CRITICAL: Video processing completed but no frames were processed! Total frames: {total_frames}"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={
+                        "analysis_id": analysis_id,
+                        "video_path": video_path,
+                        "total_frames": total_frames,
+                        "frames_processed": frames_processed
+                    }
+                )
+            
+            # Validate that metrics exist and are not fallback
+            metrics = analysis_result.get('metrics', {})
+            if not metrics or metrics.get('fallback_metrics', False):
+                error_msg = "Video processing completed but metrics are missing or fallback"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={
+                        "analysis_id": analysis_id,
+                        "has_metrics": bool(metrics),
+                        "fallback_metrics": metrics.get('fallback_metrics', False) if metrics else None
+                    }
+                )
+            
+            logger.info(
+                f"[{request_id}] ✅ Video analysis completed successfully: {frames_processed} frames processed, {len(metrics)} metrics calculated",
+                extra={
+                    "analysis_id": analysis_id,
+                    "frames_processed": frames_processed,
+                    "total_frames": total_frames,
+                    "metrics_count": len(metrics),
+                    "has_symmetry": "step_time_symmetry" in metrics or "step_length_symmetry" in metrics
                 }
             )
         except PoseEstimationError as e:
@@ -1188,8 +1223,8 @@ async def process_analysis_azure(
                     )
                     return default
             
-                metrics = {
-                    'cadence': safe_get_metric('cadence', 0.0),
+            metrics = {
+                'cadence': safe_get_metric('cadence', 0.0),
                 'step_length': safe_get_metric('step_length', 0.0),  # in mm
                 'walking_speed': safe_get_metric('walking_speed', 0.0),  # in mm/s
                 'stride_length': safe_get_metric('stride_length', 0.0),  # in mm
@@ -1240,9 +1275,9 @@ async def process_analysis_azure(
             try:
                 await db_service.update_analysis(analysis_id, {
                     'current_step': 'report_generation',
-            'step_progress': 95,
-            'step_message': 'Generating analysis report...'
-        })
+                    'step_progress': 95,
+                    'step_message': 'Generating analysis report...'
+                })
                 break  # Success
             except Exception as e:
                 if retry < max_db_retries - 1:
@@ -1261,10 +1296,19 @@ async def process_analysis_azure(
                     # Continue anyway - not critical
         
         # CRITICAL: Stop heartbeat before final updates
+        # But keep it running until we're sure the analysis is saved
         if heartbeat_stop_event:
+            logger.info(f"[{request_id}] Stopping heartbeat thread before final update...")
             heartbeat_stop_event.set()
             if heartbeat_thread and heartbeat_thread.is_alive():
-                heartbeat_thread.join(timeout=2.0)
+                try:
+                    heartbeat_thread.join(timeout=3.0)  # Increased timeout
+                    if heartbeat_thread.is_alive():
+                        logger.warning(f"[{request_id}] Heartbeat thread did not stop within timeout")
+                    else:
+                        logger.info(f"[{request_id}] Heartbeat thread stopped successfully")
+                except Exception as e:
+                    logger.warning(f"[{request_id}] Error stopping heartbeat thread: {e}")
         
         # CRITICAL: Verify analysis exists before final update
         analysis_verified = False
@@ -1308,11 +1352,11 @@ async def process_analysis_azure(
             try:
                 await db_service.update_analysis(analysis_id, {
                     'status': 'completed',
-            'current_step': 'report_generation',
-            'step_progress': 100,
-            'step_message': 'Analysis complete!',
-            'metrics': metrics
-        })
+                    'current_step': 'report_generation',
+                    'step_progress': 100,
+                    'step_message': 'Analysis complete!',
+                    'metrics': metrics
+                })
                 completion_success = True
                 logger.info(
                     f"[{request_id}] Analysis completed successfully",
@@ -1394,9 +1438,9 @@ async def process_analysis_azure(
         )
         try:
             await db_service.update_analysis(analysis_id, {
-            'status': 'failed',
-            'step_message': error_msg
-        })
+                'status': 'failed',
+                'step_message': error_msg
+            })
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to update analysis status after timeout: {db_err}")
     
@@ -1439,9 +1483,9 @@ async def process_analysis_azure(
         )
         try:
             await db_service.update_analysis(analysis_id, {
-            'status': 'failed',
-            'step_message': error_msg
-        })
+                'status': 'failed',
+                'step_message': error_msg
+            })
         except Exception as db_err:
             logger.error(f"[{request_id}] Failed to update analysis status: {db_err}")
     
