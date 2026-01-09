@@ -259,34 +259,34 @@ async def upload_video(
         chunk_count = 0
         last_log_time = time.time()
         try:
-        while True:
-            chunk = await file.read(chunk_size)
-            if not chunk:
-                break
-                        file_size += len(chunk)
-                        chunk_count += 1
-                        
-                        # Write chunk immediately to reduce memory usage
-            tmp_file.write(chunk)
-                        
-                        # Log progress more frequently for large files (every 5MB or every 5 seconds)
-                        current_time = time.time()
-                        if chunk_count % 20 == 0 or (current_time - last_log_time) >= 5.0:  # Every 20 chunks (~5MB) or every 5 seconds
-                            elapsed = current_time - upload_start_time
-                            upload_rate = (file_size / elapsed) / (1024 * 1024) if elapsed > 0 else 0  # MB/s
-                            estimated_total_time = (file_size / upload_rate) if upload_rate > 0 else 0
-                            logger.info(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read ({chunk_count} chunks, {elapsed:.1f}s elapsed, {upload_rate:.2f}MB/s, est. {estimated_total_time:.1f}s total)")
-                            
-                            # Warn if upload is taking too long (approaching 230s timeout)
-                            if elapsed > 180:  # 3 minutes - getting close to 230s timeout
-                                logger.warning(f"[{request_id}] ⚠️ Upload taking longer than expected ({elapsed:.1f}s). Azure timeout is 230s. File may timeout.")
-                            
-                            last_log_time = current_time
-                        
-                        # Check file size limit
-                        if file_size > MAX_FILE_SIZE:
-        tmp_file.close()
-                            os.unlink(tmp_path)
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                chunk_count += 1
+                
+                # Write chunk immediately to reduce memory usage
+                tmp_file.write(chunk)
+                
+                # Log progress more frequently for large files (every 5MB or every 5 seconds)
+                current_time = time.time()
+                if chunk_count % 20 == 0 or (current_time - last_log_time) >= 5.0:  # Every 20 chunks (~5MB) or every 5 seconds
+                    elapsed = current_time - upload_start_time
+                    upload_rate = (file_size / elapsed) / (1024 * 1024) if elapsed > 0 else 0  # MB/s
+                    estimated_total_time = (file_size / upload_rate) if upload_rate > 0 else 0
+                    logger.info(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read ({chunk_count} chunks, {elapsed:.1f}s elapsed, {upload_rate:.2f}MB/s, est. {estimated_total_time:.1f}s total)")
+                    
+                    # Warn if upload is taking too long (approaching 230s timeout)
+                    if elapsed > 180:  # 3 minutes - getting close to 230s timeout
+                        logger.warning(f"[{request_id}] ⚠️ Upload taking longer than expected ({elapsed:.1f}s). Azure timeout is 230s. File may timeout.")
+                    
+                    last_log_time = current_time
+                
+                # Check file size limit
+                if file_size > MAX_FILE_SIZE:
+                    tmp_file.close()
+                    os.unlink(tmp_path)
                             logger.error(
                                 f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
                                 extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
