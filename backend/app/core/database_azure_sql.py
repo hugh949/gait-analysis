@@ -902,13 +902,13 @@ class AzureSQLService:
                     elif retry < 10:
                         # Next 5 attempts: short delays (0.3s, 0.4s, 0.5s, 0.6s, 0.7s)
                         delay = 0.3 + 0.1 * (retry - 5)
-                else:
+                    else:
                         # Later attempts: longer delays (0.8s, 1.0s, 1.2s, etc.)
                         delay = 0.8 + 0.2 * (retry - 10)
                     
                     logger.debug(f"GET: Analysis {analysis_id} not found, retrying in {delay:.2f}s (attempt {retry + 1}/{max_retries})")
                     time.sleep(delay)
-                        continue
+                    continue
             
             # Analysis not found after retries
             logger.error(f"🔍❌❌❌ ANALYSIS NOT FOUND AFTER {max_retries} RETRIES ❌❌❌")
