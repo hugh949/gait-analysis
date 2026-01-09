@@ -74,6 +74,18 @@ except Exception as e:
     analysis_router = APIRouter()
     logger.warning("Using minimal router - API endpoints may not be available")
 
+# Import testing router (for development/testing only)
+try:
+    from app.api.v1.testing_azure import router as testing_router
+    app.include_router(testing_router, prefix="/api/v1")
+    logger.info("✓ Testing router imported successfully")
+    for route in testing_router.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            logger.debug(f"  Test Route: {list(route.methods)} {route.path}")
+except Exception as e:
+    logger.warning(f"Failed to import testing router (non-critical): {e}")
+    # Testing router is optional - don't fail if it's not available
+
 # Get paths
 # In Docker, frontend is at /app/frontend/dist (copied from backend/frontend-dist)
 BASE_DIR = Path(__file__).parent
