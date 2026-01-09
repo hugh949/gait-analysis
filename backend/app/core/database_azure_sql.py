@@ -164,7 +164,7 @@ class AzureSQLService:
                             logger.error(f"LOAD: Storage file is still empty after {max_retries} attempts. Preserving in-memory storage.")
                             # CRITICAL: Don't clear in-memory storage - preserve it
                             if not AzureSQLService._mock_storage:
-                                AzureSQLService._mock_storage = {}
+                            AzureSQLService._mock_storage = {}
                             return
                     
                     # Use file locking to prevent race conditions (if available)
@@ -184,7 +184,7 @@ class AzureSQLService:
                             # CRITICAL: Preserve in-memory storage if it exists
                             if not AzureSQLService._mock_storage:
                                 logger.warning(f"LOAD: In-memory storage is empty, keeping it empty")
-                                AzureSQLService._mock_storage = {}
+                            AzureSQLService._mock_storage = {}
                             else:
                                 logger.warning(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory despite invalid file data")
                             return
@@ -230,7 +230,7 @@ class AzureSQLService:
                 # Only clear if in-memory storage is also empty (fresh start)
                 if not AzureSQLService._mock_storage:
                     logger.warning(f"LOAD: In-memory storage is empty, keeping it empty despite JSON error")
-                    AzureSQLService._mock_storage = {}
+                AzureSQLService._mock_storage = {}
                 else:
                     logger.warning(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory despite file JSON error")
                 if attempt < max_retries - 1:
@@ -739,7 +739,7 @@ class AzureSQLService:
         
         # For real SQL, we can't use sync method - return False to indicate async method should be used
         logger.warning(f"UPDATE_SYNC: Real SQL database - sync method not available. Use async update_analysis instead.")
-        return False
+            return False
     
     async def get_analysis(self, analysis_id: str) -> Optional[Dict]:
         """
@@ -902,13 +902,13 @@ class AzureSQLService:
                     elif retry < 10:
                         # Next 5 attempts: short delays (0.3s, 0.4s, 0.5s, 0.6s, 0.7s)
                         delay = 0.3 + 0.1 * (retry - 5)
-                    else:
+                else:
                         # Later attempts: longer delays (0.8s, 1.0s, 1.2s, etc.)
                         delay = 0.8 + 0.2 * (retry - 10)
                     
                     logger.debug(f"GET: Analysis {analysis_id} not found, retrying in {delay:.2f}s (attempt {retry + 1}/{max_retries})")
                     time.sleep(delay)
-                    continue
+                        continue
             
             # Analysis not found after retries
             logger.error(f"🔍❌❌❌ ANALYSIS NOT FOUND AFTER {max_retries} RETRIES ❌❌❌")
