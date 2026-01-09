@@ -184,7 +184,7 @@ class AzureSQLService:
                             # CRITICAL: Preserve in-memory storage if it exists
                             if not AzureSQLService._mock_storage:
                                 logger.warning(f"LOAD: In-memory storage is empty, keeping it empty")
-                            AzureSQLService._mock_storage = {}
+                                AzureSQLService._mock_storage = {}
                             else:
                                 logger.warning(f"LOAD: Preserving {len(AzureSQLService._mock_storage)} analyses in memory despite invalid file data")
                             return
