@@ -1509,6 +1509,39 @@ async def process_analysis_azure(
                     }
                 )
             
+            # CRITICAL: Validate that all 4 steps completed successfully
+            steps_completed = analysis_result.get('steps_completed', {})
+            if not steps_completed:
+                logger.warning(f"[{request_id}] ⚠️ Analysis result missing steps_completed tracking - assuming all steps completed")
+                steps_completed = {
+                    "step_1_pose_estimation": True,
+                    "step_2_3d_lifting": True,
+                    "step_3_metrics_calculation": True,
+                    "step_4_report_generation": True
+                }
+            
+            logger.info("=" * 80)
+            logger.info(f"[{request_id}] 🔍 ========== VALIDATION: ALL 4 STEPS COMPLETION CHECK ==========")
+            logger.info(f"[{request_id}] 🔍 Step 1 (Pose Estimation): {'✅ COMPLETE' if steps_completed.get('step_1_pose_estimation', False) else '❌ FAILED'}")
+            logger.info(f"[{request_id}] 🔍 Step 2 (3D Lifting): {'✅ COMPLETE' if steps_completed.get('step_2_3d_lifting', False) else '❌ FAILED'}")
+            logger.info(f"[{request_id}] 🔍 Step 3 (Metrics Calculation): {'✅ COMPLETE' if steps_completed.get('step_3_metrics_calculation', False) else '❌ FAILED'}")
+            logger.info(f"[{request_id}] 🔍 Step 4 (Report Generation): {'✅ COMPLETE' if steps_completed.get('step_4_report_generation', False) else '❌ FAILED'}")
+            logger.info("=" * 80)
+            
+            # CRITICAL: Fail if any step didn't complete
+            if not all(steps_completed.values()):
+                failed_steps = [step for step, completed in steps_completed.items() if not completed]
+                error_msg = f"CRITICAL: Not all processing steps completed successfully. Failed steps: {failed_steps}"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={
+                        "analysis_id": analysis_id,
+                        "steps_completed": steps_completed,
+                        "failed_steps": failed_steps
+                    }
+                )
+            
             # Validate that metrics exist and are not fallback
             metrics = analysis_result.get('metrics', {})
             if not metrics or metrics.get('fallback_metrics', False):

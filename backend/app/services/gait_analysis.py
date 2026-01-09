@@ -689,9 +689,16 @@ class GaitAnalysisService:
             # Continue - don't fail the entire process
         
         # STEP 2: Lift to 3D - with comprehensive error handling and fallback
+        logger.info("=" * 80)
+        logger.info("🎯 ========== STEP 2: 3D LIFTING STARTING ==========")
+        logger.info(f"🎯 Input: {len(frames_2d_keypoints)} 2D keypoint frames")
+        logger.info(f"🎯 View type: {view_type}")
+        logger.info("=" * 80)
+        
         if progress_callback:
             try:
-                progress_callback(65, "Lifting 2D keypoints to 3D...")
+                progress_callback(60, "Starting 3D lifting...")
+                progress_callback(62, "Lifting 2D keypoints to 3D...")
             except Exception as e:
                 logger.warning(f"Error in progress callback during 3D lifting step: {e}")
         
@@ -699,7 +706,7 @@ class GaitAnalysisService:
         try:
             logger.debug(f"Starting 3D lifting: {len(frames_2d_keypoints)} 2D frames, view_type={view_type}")
             frames_3d_keypoints = self._lift_to_3d(frames_2d_keypoints, view_type)
-            logger.info(f"3D lifting complete: {len(frames_3d_keypoints)} frames successfully lifted to 3D")
+            logger.info(f"✅ 3D lifting complete: {len(frames_3d_keypoints)} frames successfully lifted to 3D")
             
             # Validate 3D keypoints quality
             valid_3d_count = sum(1 for kp in frames_3d_keypoints if len(kp) > 0)
@@ -709,6 +716,18 @@ class GaitAnalysisService:
                 error_msg = "3D lifting produced no valid keypoints. Cannot proceed with analysis."
                 logger.error(f"❌ {error_msg}")
                 raise PoseEstimationError(error_msg)
+            
+            logger.info("=" * 80)
+            logger.info("✅ ========== STEP 2: 3D LIFTING COMPLETE ==========")
+            logger.info(f"✅ Output: {len(frames_3d_keypoints)} 3D keypoint frames")
+            logger.info(f"✅ Valid frames: {valid_3d_count}/{len(frames_3d_keypoints)}")
+            logger.info("=" * 80)
+            
+            if progress_callback:
+                try:
+                    progress_callback(70, "3D lifting complete - validating results...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback after 3D lifting: {e}")
         except PoseEstimationError:
             # Re-raise PoseEstimationError as-is
             raise
@@ -718,8 +737,15 @@ class GaitAnalysisService:
             raise PoseEstimationError(error_msg) from e
         
         # STEP 3: Calculate gait metrics - with comprehensive error handling and fallback
+        logger.info("=" * 80)
+        logger.info("🎯 ========== STEP 3: GAIT METRICS CALCULATION STARTING ==========")
+        logger.info(f"🎯 Input: {len(frames_3d_keypoints)} 3D keypoint frames")
+        logger.info(f"🎯 FPS: {video_fps}, Reference length: {reference_length_mm}mm")
+        logger.info("=" * 80)
+        
         if progress_callback:
             try:
+                progress_callback(72, "Starting gait metrics calculation...")
                 progress_callback(75, "Calculating gait parameters...")
             except Exception as e:
                 logger.warning(f"Error in progress callback during metrics calculation: {e}")
@@ -732,13 +758,25 @@ class GaitAnalysisService:
                 video_fps,
                 reference_length_mm
             )
-            logger.info(f"Gait metrics calculated: {len(metrics)} metrics")
+            logger.info(f"✅ Gait metrics calculated: {len(metrics)} metrics")
             
             # CRITICAL: Validate metrics are not empty or fallback
             if not metrics or metrics.get('fallback_metrics', False):
                 error_msg = "Gait metrics calculation failed or returned fallback metrics. Cannot proceed with analysis."
                 logger.error(f"❌ {error_msg}")
                 raise GaitMetricsError(error_msg)
+            
+            logger.info("=" * 80)
+            logger.info("✅ ========== STEP 3: GAIT METRICS CALCULATION COMPLETE ==========")
+            logger.info(f"✅ Metrics calculated: {len(metrics)}")
+            logger.info(f"✅ Sample metrics: cadence={metrics.get('cadence', 0):.1f}, step_length={metrics.get('step_length', 0):.0f}mm")
+            logger.info("=" * 80)
+            
+            if progress_callback:
+                try:
+                    progress_callback(90, "Gait metrics calculation complete - validating results...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback after metrics calculation: {e}")
         except GaitMetricsError:
             # Re-raise GaitMetricsError as-is
             raise
@@ -747,8 +785,18 @@ class GaitAnalysisService:
             logger.error(f"❌ {error_msg}", exc_info=True)
             raise GaitMetricsError(error_msg) from e
         
+        # STEP 4: Report generation - finalizing results
+        logger.info("=" * 80)
+        logger.info("🎯 ========== STEP 4: REPORT GENERATION STARTING ==========")
+        logger.info(f"🎯 Preparing final analysis report...")
+        logger.info("=" * 80)
+        
         if progress_callback:
-            progress_callback(95, "Finalizing analysis results...")
+            try:
+                progress_callback(92, "Generating analysis report...")
+                progress_callback(95, "Finalizing analysis results...")
+            except Exception as e:
+                logger.warning(f"Error in progress callback during report generation: {e}")
         
         # Calculate processing statistics
         frames_processed_count = len(frames_2d_keypoints)
