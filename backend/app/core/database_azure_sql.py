@@ -953,7 +953,7 @@ class AzureSQLService:
                                     return AzureSQLService._mock_storage[analysis_id].copy()
                                 else:
                                     # Fallback: return directly from file
-                                return file_data[analysis_id].copy()
+                                    return file_data[analysis_id].copy()
                         else:
                             logger.error(f"CRITICAL: File contains invalid data type: {type(file_data)}. Expected dict.")
                 except json.JSONDecodeError as e:
