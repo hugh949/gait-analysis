@@ -756,7 +756,6 @@ async def process_analysis_azure(
         # During CPU-intensive processing, async tasks are starved, so we need threads
         last_known_progress = {'step': 'pose_estimation', 'progress': 0, 'message': 'Starting analysis...'}
         heartbeat_stop_event = threading.Event()
-        heartbeat_thread_ref = {'thread': None}  # Use dict to allow modification from nested function
         
         def thread_based_heartbeat():
             """Thread-based heartbeat that runs independently of async event loop"""
@@ -848,7 +847,6 @@ async def process_analysis_azure(
         
         # Start thread-based heartbeat IMMEDIATELY - before any processing starts
         heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=True, name=f"heartbeat-{analysis_id[:8]}")
-        heartbeat_thread_ref['thread'] = heartbeat_thread
         heartbeat_thread.start()
         logger.info(f"[{request_id}] ✅ Started thread-based heartbeat for analysis {analysis_id} (thread ID: {heartbeat_thread.ident}, name: {heartbeat_thread.name})")
         
