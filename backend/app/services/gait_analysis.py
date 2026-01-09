@@ -432,10 +432,27 @@ class GaitAnalysisService:
         frame_timestamps = []
         frame_count = 0
         
-        # Process more frames for better accuracy (reduce frame_skip)
-        frame_skip = max(1, int(video_fps / 15))  # Process ~15 frames per second for accuracy
+        # OPTIMIZED for files under 100MB: Process more frames for better accuracy
+        # For smaller files, we can afford to process more frames since videos are shorter
+        # This improves accuracy while still completing in reasonable time
+        # Calculate estimated video duration to determine optimal frame processing rate
+        estimated_duration = total_frames / video_fps if video_fps > 0 else 0
         
-        logger.info(f"Starting frame processing: frame_skip={frame_skip}")
+        # For videos under 30 seconds (typical for <100MB files), process more frames
+        if estimated_duration <= 30:
+            # Process ~20 frames per second for short videos (higher accuracy)
+            frame_skip = max(1, int(video_fps / 20))
+            logger.info(f"Short video detected ({estimated_duration:.1f}s) - using high-accuracy mode: frame_skip={frame_skip} (~20 fps)")
+        elif estimated_duration <= 60:
+            # Process ~15 frames per second for medium videos
+            frame_skip = max(1, int(video_fps / 15))
+            logger.info(f"Medium video detected ({estimated_duration:.1f}s) - using balanced mode: frame_skip={frame_skip} (~15 fps)")
+        else:
+            # Process ~10 frames per second for longer videos (balance speed/accuracy)
+            frame_skip = max(1, int(video_fps / 10))
+            logger.info(f"Long video detected ({estimated_duration:.1f}s) - using speed-optimized mode: frame_skip={frame_skip} (~10 fps)")
+        
+        logger.info(f"Starting frame processing: frame_skip={frame_skip}, total_frames={total_frames}, estimated_duration={estimated_duration:.1f}s")
         
         while cap.isOpened():
             ret, frame = cap.read()

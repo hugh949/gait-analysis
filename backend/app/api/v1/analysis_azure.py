@@ -929,7 +929,7 @@ async def process_analysis_azure(
                             message = last_known_progress['message']
                             
                             # Use sync update method (works from threads)
-                            # CRITICAL: This MUST be fast - use timeout protection
+                            # OPTIMIZED: This now batches file writes, so it's much faster
                             start_time = time.time()
                             try:
                                 update_success = db_service.update_analysis_sync(analysis_id, {
@@ -942,7 +942,8 @@ async def process_analysis_azure(
                                 
                                 if update_success:
                                     last_successful_update = time.time()
-                                    if heartbeat_count % 20 == 0:  # Log every 20 heartbeats (every 2 seconds) for better visibility
+                                    # Log every 10 heartbeats (every 1 second) for better visibility
+                                    if heartbeat_count % 10 == 0:
                                         logger.info(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Analysis {analysis_id} updated ({step} {progress}%, took {update_duration:.3f}s)")
                                     
                                     # CRITICAL: Verify analysis still exists after update

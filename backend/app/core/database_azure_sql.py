@@ -290,11 +290,10 @@ class AzureSQLService:
             except Exception as e:
                 logger.warning(f"SAVE: Could not sync file (may cause visibility delay): {e}")
             
-            # CRITICAL: Add a delay to ensure filesystem has time to make file visible
-            # This helps with filesystem caching and ensures other processes can see the file
-            # Increased delay for better cross-worker visibility during long processing
-            # During active video processing, we need longer delays for file visibility
-            time.sleep(0.2)  # 200ms delay for filesystem to catch up (increased from 100ms for better reliability)
+            # CRITICAL: Minimal delay for filesystem visibility
+            # Reduced from 200ms to 10ms for faster heartbeat performance
+            # The fsync operations above should be sufficient for most cases
+            time.sleep(0.01)  # 10ms delay - minimal but allows filesystem to catch up
             
             analysis_ids = list(AzureSQLService._mock_storage.keys())
             logger.info(f"💾 SAVE: Successfully saved {len(AzureSQLService._mock_storage)} analyses to mock storage file: {AzureSQLService._mock_storage_file}")
@@ -598,10 +597,9 @@ class AzureSQLService:
     def update_analysis_sync(self, analysis_id: str, updates: Dict) -> bool:
         """
         Synchronous version of update_analysis for use from threads.
-        CRITICAL: This method updates in-memory storage FIRST, then saves to file IMMEDIATELY.
-        This ensures the analysis is always visible across workers during long processing.
+        OPTIMIZED: Updates in-memory immediately, batches file writes every 1 second.
+        This ensures the analysis is always visible in-memory while reducing file I/O overhead.
         """
-        logger.info(f"📝 UPDATE_SYNC: Updating analysis {analysis_id} with fields: {list(updates.keys())}")
         if self._use_mock:
             # CRITICAL: Always ensure analysis exists in memory before updating
             # If not in memory, try to load from file first (for cross-worker scenarios)
@@ -624,34 +622,42 @@ class AzureSQLService:
                 new_step = updates.get('current_step', old_step)
                 new_progress = updates.get('step_progress', old_progress)
                 
-                logger.info(f"📝 UPDATE_SYNC: Updated analysis {analysis_id} in memory. Status: {old_status}->{new_status}, step: {old_step}->{new_step}, progress: {old_progress}%->{new_progress}%")
+                # Only log every 10 updates to reduce log spam
+                if not hasattr(AzureSQLService, '_update_count'):
+                    AzureSQLService._update_count = {}
+                AzureSQLService._update_count[analysis_id] = AzureSQLService._update_count.get(analysis_id, 0) + 1
+                if AzureSQLService._update_count[analysis_id] % 10 == 0:
+                    logger.info(f"📝 UPDATE_SYNC: Updated analysis {analysis_id} in memory (#{AzureSQLService._update_count[analysis_id]}). Status: {old_status}->{new_status}, step: {old_step}->{new_step}, progress: {old_progress}%->{new_progress}%")
                 
-                # CRITICAL: Save to file IMMEDIATELY after memory update (for cross-worker visibility)
-                # This is essential for long-running processing where other workers need to see updates
-                # Use timeout to prevent blocking the heartbeat thread on slow file I/O
-                save_start = time.time()
-                try:
-                    # CRITICAL: Force sync on every heartbeat update during processing
-                    # This ensures the analysis is ALWAYS visible across workers
-                    self._save_mock_storage(force_sync=True)  # Persist to file with forced sync
-                    save_duration = time.time() - save_start
-                    logger.info(f"✅ UPDATE_SYNC: Successfully saved analysis {analysis_id} to file in {save_duration:.3f}s. Total analyses: {len(AzureSQLService._mock_storage)}")
-                    
-                    # CRITICAL: Verify the save worked by checking file exists and has our analysis
-                    # This ensures the file is actually written and visible
-                    if save_duration < 1.0:  # Only verify if save was quick (don't block on slow I/O)
-                        file_path = os.path.abspath(AzureSQLService._mock_storage_file)
-                        if os.path.exists(file_path):
-                            file_size = os.path.getsize(file_path)
-                            logger.debug(f"UPDATE_SYNC: File verified: {file_path} ({file_size} bytes)")
-                    elif save_duration > 1.0:
-                        logger.warning(f"UPDATE_SYNC: Slow file save took {save_duration:.2f}s - may impact heartbeat performance")
-                except Exception as save_error:
-                    save_duration = time.time() - save_start
-                    # CRITICAL: Even if file save fails, the update is in memory
-                    # Don't fail the update - in-memory storage is the source of truth
-                    logger.error(f"UPDATE_SYNC: Failed to save to file after {save_duration:.3f}s, but update is in memory: {save_error}. Analysis {analysis_id} is still available in memory.")
-                    # Continue - the update is successful in memory, but cross-worker visibility may be limited
+                # OPTIMIZED: Batch file writes - only save every 1 second instead of every 0.1s
+                # This reduces file I/O overhead while still ensuring frequent persistence
+                current_time = time.time()
+                if not hasattr(AzureSQLService, '_last_file_save'):
+                    AzureSQLService._last_file_save = {}
+                
+                last_save_time = AzureSQLService._last_file_save.get(analysis_id, 0)
+                time_since_last_save = current_time - last_save_time
+                
+                # Save to file every 1 second (instead of every 0.1s)
+                # This reduces file I/O by 10x while still ensuring frequent persistence
+                if time_since_last_save >= 1.0:
+                    save_start = time.time()
+                    try:
+                        # Save to file with forced sync for cross-worker visibility
+                        self._save_mock_storage(force_sync=True)
+                        save_duration = time.time() - save_start
+                        AzureSQLService._last_file_save[analysis_id] = current_time
+                        
+                        if save_duration > 0.1:
+                            logger.warning(f"UPDATE_SYNC: File save took {save_duration:.3f}s (may impact heartbeat)")
+                        elif AzureSQLService._update_count[analysis_id] % 20 == 0:  # Log every 20 saves
+                            logger.debug(f"✅ UPDATE_SYNC: Saved analysis {analysis_id} to file in {save_duration:.3f}s")
+                    except Exception as save_error:
+                        save_duration = time.time() - save_start
+                        # CRITICAL: Even if file save fails, the update is in memory
+                        logger.error(f"UPDATE_SYNC: Failed to save to file after {save_duration:.3f}s, but update is in memory: {save_error}")
+                        # Continue - the update is successful in memory
+                
                 return True
             
             # Analysis not found - try to reload and recreate
