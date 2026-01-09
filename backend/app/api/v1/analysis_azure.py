@@ -884,8 +884,26 @@ async def process_analysis_azure(
         
         # CRITICAL: Use THREAD-BASED keep-alive that runs independently of async event loop
         # During CPU-intensive processing, async tasks are starved, so we need threads
+        # CRITICAL: Initialize last_known_progress with a valid step name (not None)
+        # This ensures heartbeat thread always has valid data to update
         last_known_progress = {'step': 'pose_estimation', 'progress': 0, 'message': 'Starting analysis...'}
         heartbeat_stop_event = threading.Event()
+        
+        # CRITICAL: Ensure analysis is ALWAYS in memory before starting heartbeat
+        # This prevents the analysis from being lost during heartbeat startup
+        if db_service and db_service._use_mock:
+            if analysis_id not in db_service._mock_storage:
+                logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis {analysis_id} NOT in memory before heartbeat start! ❌❌❌")
+                logger.error(f"[{request_id}] ❌ Memory storage size: {len(db_service._mock_storage)}")
+                logger.error(f"[{request_id}] ❌ Memory analysis IDs: {list(db_service._mock_storage.keys())}")
+                # Try to reload from file
+                db_service._load_mock_storage()
+                if analysis_id not in db_service._mock_storage:
+                    logger.error(f"[{request_id}] ❌ Analysis still not found after reload - will recreate in heartbeat")
+                else:
+                    logger.error(f"[{request_id}] ✅ Analysis found after reload")
+            else:
+                logger.error(f"[{request_id}] ✅ Analysis {analysis_id} confirmed in memory before heartbeat start")
         
         def thread_based_heartbeat():
             """Thread-based heartbeat that runs independently of async event loop
