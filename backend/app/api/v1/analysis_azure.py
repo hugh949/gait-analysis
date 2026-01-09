@@ -966,6 +966,23 @@ async def process_analysis_azure(
                                         logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis disappeared IMMEDIATELY after successful update! ❌❌❌")
                                         logger.error(f"[{request_id}] ❌ Memory storage size: {len(db_service._mock_storage)}")
                                         logger.error(f"[{request_id}] ❌ Memory analysis IDs: {list(db_service._mock_storage.keys())}")
+                                        # Recreate immediately
+                                        from datetime import datetime
+                                        db_service._mock_storage[analysis_id] = {
+                                            'id': analysis_id,
+                                            'patient_id': patient_id,
+                                            'filename': 'unknown',
+                                            'video_url': video_url,
+                                            'status': 'processing',
+                                            'current_step': step,
+                                            'step_progress': progress,
+                                            'step_message': f"{message} (recreated after disappearance)",
+                                            'metrics': {},
+                                            'created_at': datetime.now().isoformat(),
+                                            'updated_at': datetime.now().isoformat()
+                                        }
+                                        db_service._save_mock_storage(force_sync=True)
+                                        logger.error(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Recreated analysis after disappearance")
                                 else:
                                     logger.error(f"[{request_id}] ❌❌❌ HEARTBEAT #{heartbeat_count} UPDATE FAILED ❌❌❌")
                                     logger.error(f"[{request_id}] ❌ Update returned False")
@@ -991,8 +1008,7 @@ async def process_analysis_azure(
                                         }
                                         db_service._save_mock_storage(force_sync=True)
                                         logger.error(f"[{request_id}] ✅ THREAD HEARTBEAT #{heartbeat_count}: Recreated analysis after disappearance")
-                                else:
-                                    if heartbeat_count % 10 == 0:  # Log every 10 heartbeats
+                                    elif heartbeat_count % 10 == 0:  # Log every 10 heartbeats
                                         logger.warning(f"[{request_id}] ⚠️ THREAD HEARTBEAT #{heartbeat_count}: Update returned False")
                                 
                                 if update_duration > 0.3:
