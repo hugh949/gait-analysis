@@ -475,8 +475,8 @@ jobs:
           --output none
         
         echo "✅ App Service started"
-        echo "⏳ Waiting 15 seconds for initial startup..."
-        sleep 15
+        echo "⏳ Waiting 10 seconds for initial startup..."
+        sleep 10
         
         # Verify the app is running
         STATE=$(az webapp show \
@@ -497,8 +497,8 @@ jobs:
     - name: Wait for container to be ready
       run: |
         echo "⏳ Waiting for container to be fully ready..."
-        echo "   This may take 30-60 seconds for the first request"
-        sleep 30
+        echo "   This may take 20-40 seconds for the first request"
+        sleep 20
         
     - name: Verify deployed code
       run: |
@@ -528,36 +528,40 @@ jobs:
         
         HEALTH_CHECK_PASSED=false
         LAST_ERROR=""
-        # Reduced from 25 to 15 checks (2 minutes instead of 3+ minutes)
-        for i in {1..15}; do
+        # Optimized: 10 checks with 5 second intervals = max 50 seconds (was 15 checks * 8s = 120s)
+        for i in {1..10}; do
           # Test root endpoint
-          HTTP_CODE_ROOT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$APP_URL/" 2>&1 | tail -1 || echo "000")
+          HTTP_CODE_ROOT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/" 2>&1 | tail -1 || echo "000")
           # Test health endpoint  
-          HTTP_CODE_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$APP_URL/health" 2>&1 | tail -1 || echo "000")
+          HTTP_CODE_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/health" 2>&1 | tail -1 || echo "000")
           
-          # Check for specific error patterns in response
-          RESPONSE=$(curl -s --max-time 15 "$APP_URL/" 2>&1 || echo "")
-          ERROR_RESPONSE=$(curl -s --max-time 15 "$APP_URL/health" 2>&1 || echo "")
+          # Check for specific error patterns in response (only on first few attempts to save time)
+          if [ "$i" -le 3 ]; then
+            RESPONSE=$(curl -s --max-time 10 "$APP_URL/" 2>&1 || echo "")
+            ERROR_RESPONSE=$(curl -s --max-time 10 "$APP_URL/health" 2>&1 || echo "")
+            
+            # Detect common deployment errors
+            if echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "FileResponse.*not defined\|NameError.*FileResponse"; then
+              LAST_ERROR="FileResponse import missing - deployment may not have updated. Code needs to be rebuilt."
+              echo "   ❌ Check $i/10... Found FileResponse error - code may not be updated"
+              echo "   This indicates the old code is still running. The new image may not have been pulled."
+              if [ "$i" -eq 3 ]; then
+                echo "   🔄 Attempting to force container restart..."
+                az webapp restart \
+                  --name ${{ env.AZURE_WEBAPP_NAME }} \
+                  --resource-group ${{ env.RESOURCE_GROUP }} \
+                  --output none
+                sleep 15
+              fi
+            elif echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "500\|Internal Server Error"; then
+              if [ -z "$LAST_ERROR" ]; then
+                LAST_ERROR="Application error detected (HTTP 500)"
+              fi
+              echo "   ⚠️  Check $i/10... Application error (HTTP $HTTP_CODE_ROOT)"
+            fi
+          fi
           
-          # Detect common deployment errors
-          if echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "FileResponse.*not defined\|NameError.*FileResponse"; then
-            LAST_ERROR="FileResponse import missing - deployment may not have updated. Code needs to be rebuilt."
-            echo "   ❌ Check $i/25... Found FileResponse error - code may not be updated"
-            echo "   This indicates the old code is still running. The new image may not have been pulled."
-            if [ "$i" -eq 5 ]; then
-              echo "   🔄 Attempting to force container restart..."
-              az webapp restart \
-                --name ${{ env.AZURE_WEBAPP_NAME }} \
-                --resource-group ${{ env.RESOURCE_GROUP }} \
-                --output none
-              sleep 20
-            fi
-          elif echo "$RESPONSE $ERROR_RESPONSE" | grep -qi "500\|Internal Server Error"; then
-            if [ -z "$LAST_ERROR" ]; then
-              LAST_ERROR="Application error detected (HTTP 500)"
-            fi
-            echo "   ⚠️  Check $i/25... Application error (HTTP $HTTP_CODE_ROOT)"
-          elif [ "$HTTP_CODE_ROOT" = "200" ] || [ "$HTTP_CODE_HEALTH" = "200" ]; then
+          if [ "$HTTP_CODE_ROOT" = "200" ] || [ "$HTTP_CODE_HEALTH" = "200" ]; then
             echo ""
             echo "✅✅✅ Application is healthy!"
             echo "   Root endpoint: HTTP $HTTP_CODE_ROOT"
@@ -565,8 +569,8 @@ jobs:
             echo ""
             
             # Show health check details
-            curl -s --max-time 15 "$APP_URL/health" | python3 -m json.tool 2>/dev/null || \
-            curl -s --max-time 15 "$APP_URL/" | python3 -m json.tool 2>/dev/null || \
+            curl -s --max-time 10 "$APP_URL/health" | python3 -m json.tool 2>/dev/null || \
+            curl -s --max-time 10 "$APP_URL/" | python3 -m json.tool 2>/dev/null || \
             echo "   (Response received but not JSON)"
             
             echo ""
@@ -575,14 +579,13 @@ jobs:
             HEALTH_CHECK_PASSED=true
             break
           else
-            echo "   Check $i/25... (Root: $HTTP_CODE_ROOT, Health: $HTTP_CODE_HEALTH)"
-            if [ "$i" -eq 10 ]; then
+            echo "   Check $i/10... (Root: $HTTP_CODE_ROOT, Health: $HTTP_CODE_HEALTH)"
+            if [ "$i" -eq 5 ]; then
               echo "   ⏳ Still starting... this is normal, container may need more time"
             fi
-            if [ "$i" -eq 20 ]; then
-              echo "   ⏳ Taking longer than expected... checking logs may help"
+            if [ "$i" -lt 10 ]; then
+              sleep 5
             fi
-            sleep 8
           fi
         done
         
