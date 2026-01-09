@@ -766,37 +766,37 @@ async def process_analysis_azure(
         
         # Download video from blob storage to temporary file with comprehensive error handling
         try:
-        if video_url.startswith('http') or video_url.startswith('https'):
-            # Real blob storage URL - download it
+            if video_url.startswith('http') or video_url.startswith('https'):
+                # Real blob storage URL - download it
                 logger.debug(f"[{request_id}] Downloading video from URL: {video_url}")
-            video_path = await gait_service.download_video_from_url(video_url)
-        elif os.path.exists(video_url):
-            # Local file path (used in mock mode or if file already exists)
-            video_path = video_url
+                video_path = await gait_service.download_video_from_url(video_url)
+            elif os.path.exists(video_url):
+                # Local file path (used in mock mode or if file already exists)
+                video_path = video_url
                 logger.info(
                     f"[{request_id}] Using existing file",
                     extra={"video_path": video_path, "analysis_id": analysis_id}
                 )
-        elif video_url.startswith('mock://'):
-            # Mock mode - this shouldn't happen if we fixed the upload, but handle it
+            elif video_url.startswith('mock://'):
+                # Mock mode - this shouldn't happen if we fixed the upload, but handle it
                 raise StorageError(
                     "Mock storage mode: Video file was not properly saved",
                     details={"video_url": video_url, "analysis_id": analysis_id}
                 )
-        else:
-            # Try to get video from blob storage by blob name
+            else:
+                # Try to get video from blob storage by blob name
                 if storage_service is None:
                     raise StorageError(
                         "Storage service not available and video URL is not a local file",
                         details={"video_url": video_url, "analysis_id": analysis_id}
                     )
                 
-            blob_name = video_url.split('/')[-1] if '/' in video_url else video_url
+                blob_name = video_url.split('/')[-1] if '/' in video_url else video_url
                 logger.debug(f"[{request_id}] Downloading blob: {blob_name}")
                 
-            import tempfile
-            video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-            blob_data = await storage_service.download_blob(blob_name)
+                import tempfile
+                video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+                blob_data = await storage_service.download_blob(blob_name)
                 
                 if not blob_data:
                     raise StorageError(
@@ -805,9 +805,9 @@ async def process_analysis_azure(
                     )
                 
                 try:
-                with open(video_path, 'wb') as f:
-                    f.write(blob_data)
-                    logger.debug(f"[{request_id}] Blob downloaded and saved: {video_path}")
+                    with open(video_path, 'wb') as f:
+                        f.write(blob_data)
+                        logger.debug(f"[{request_id}] Blob downloaded and saved: {video_path}")
                 except OSError as e:
                     raise StorageError(
                         f"Failed to save downloaded blob to file: {e}",
@@ -848,7 +848,7 @@ async def process_analysis_azure(
             )
         
         try:
-        file_size = os.path.getsize(video_path)
+            file_size = os.path.getsize(video_path)
         except OSError as e:
             logger.error(
                 f"[{request_id}] Error getting file size: {e}",
