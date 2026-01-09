@@ -13,6 +13,18 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 
+# Import custom exceptions for structured error handling
+try:
+    from app.core.exceptions import PoseEstimationError, GaitMetricsError, VideoProcessingError
+except ImportError:
+    # Fallback if exceptions module not available (shouldn't happen in production)
+    class PoseEstimationError(Exception):
+        pass
+    class GaitMetricsError(Exception):
+        pass
+    class VideoProcessingError(Exception):
+        pass
+
 # Import logger - handle gracefully if not available
 try:
     from loguru import logger
@@ -610,8 +622,9 @@ class GaitAnalysisService:
         logger.info(f"Video processing complete: processed {frame_count} frames, extracted {len(frames_2d_keypoints)} keypoint frames")
         
         if not frames_2d_keypoints:
-            logger.warning("No poses detected in video")
-            return self._empty_results()
+            error_msg = "No poses detected in video. Cannot proceed with analysis."
+            logger.error(f"❌ {error_msg}")
+            raise PoseEstimationError(error_msg)
         
         logger.info(f"Detected poses in {len(frames_2d_keypoints)} frames")
         
@@ -672,21 +685,16 @@ class GaitAnalysisService:
             logger.debug(f"3D keypoint validation: {valid_3d_count}/{len(frames_3d_keypoints)} frames have valid keypoints")
             
             if not frames_3d_keypoints or valid_3d_count == 0:
-                logger.warning("3D lifting produced no valid keypoints, using 2D keypoints as fallback")
-                # Fallback: use 2D keypoints with zero Z coordinate
-                frames_3d_keypoints = [[(kp[0], kp[1], 0.0) for kp in frame] if frame else [] for frame in frames_2d_keypoints]
-                logger.info(f"Fallback: Created {len(frames_3d_keypoints)} 3D frames from 2D keypoints")
+                error_msg = "3D lifting produced no valid keypoints. Cannot proceed with analysis."
+                logger.error(f"❌ {error_msg}")
+                raise PoseEstimationError(error_msg)
+        except PoseEstimationError:
+            # Re-raise PoseEstimationError as-is
+            raise
         except Exception as e:
-            logger.error(f"Error during 3D lifting: {e}", exc_info=True)
-            # CRITICAL: Don't fail - use fallback 3D keypoints (2D with Z=0)
-            logger.warning("Using fallback 3D keypoints (2D with Z=0) due to 3D lifting error")
-            try:
-                frames_3d_keypoints = [[(kp[0], kp[1], 0.0) for kp in frame] if frame else [] for frame in frames_2d_keypoints]
-                logger.info(f"Fallback 3D keypoints created: {len(frames_3d_keypoints)} frames")
-            except Exception as fallback_error:
-                logger.error(f"Even fallback 3D lifting failed: {fallback_error}", exc_info=True)
-                # Last resort: empty 3D keypoints
-                frames_3d_keypoints = [[] for _ in frames_2d_keypoints]
+            error_msg = f"Error during 3D lifting: {e}"
+            logger.error(f"❌ {error_msg}", exc_info=True)
+            raise PoseEstimationError(error_msg) from e
         
         # STEP 3: Calculate gait metrics - with comprehensive error handling and fallback
         if progress_callback:
@@ -704,52 +712,19 @@ class GaitAnalysisService:
                 reference_length_mm
             )
             logger.info(f"Gait metrics calculated: {len(metrics)} metrics")
+            
+            # CRITICAL: Validate metrics are not empty or fallback
+            if not metrics or metrics.get('fallback_metrics', False):
+                error_msg = "Gait metrics calculation failed or returned fallback metrics. Cannot proceed with analysis."
+                logger.error(f"❌ {error_msg}")
+                raise GaitMetricsError(error_msg)
+        except GaitMetricsError:
+            # Re-raise GaitMetricsError as-is
+            raise
         except Exception as e:
-            logger.error(f"Error during gait metrics calculation: {e}", exc_info=True)
-            # CRITICAL: Don't fail - use fallback metrics
-            logger.warning("Using fallback metrics due to calculation error")
-            try:
-                # Calculate basic metrics from available data
-                if frames_3d_keypoints and len(frames_3d_keypoints) > 0 and frame_timestamps:
-                    total_time = frame_timestamps[-1] - frame_timestamps[0] if len(frame_timestamps) > 1 else 1.0
-                    num_steps = max(1, len(frames_3d_keypoints) // 2)  # Rough estimate
-                    metrics = {
-                        'cadence': (num_steps / total_time * 60) if total_time > 0 else 0.0,
-                        'step_length': 0.0,
-                        'walking_speed': 0.0,
-                        'stride_length': 0.0,
-                        'double_support_time': 0.0,
-                        'swing_time': 0.0,
-                        'stance_time': 0.0,
-                        'fallback_metrics': True,
-                        'error': str(e)
-                    }
-                    logger.info(f"Fallback metrics calculated: {metrics}")
-                else:
-                    metrics = {
-                        'cadence': 0.0,
-                        'step_length': 0.0,
-                        'walking_speed': 0.0,
-                        'stride_length': 0.0,
-                        'double_support_time': 0.0,
-                        'swing_time': 0.0,
-                        'stance_time': 0.0,
-                        'fallback_metrics': True,
-                        'error': 'No valid data for metrics calculation'
-                    }
-            except Exception as fallback_error:
-                logger.error(f"Even fallback metrics calculation failed: {fallback_error}", exc_info=True)
-                # Last resort: empty metrics
-                metrics = {
-                    'cadence': 0.0,
-                    'step_length': 0.0,
-                    'walking_speed': 0.0,
-                    'stride_length': 0.0,
-                    'double_support_time': 0.0,
-                    'swing_time': 0.0,
-                    'stance_time': 0.0,
-                    'error': f"Metrics calculation failed: {str(e)}"
-                }
+            error_msg = f"Error during gait metrics calculation: {e}"
+            logger.error(f"❌ {error_msg}", exc_info=True)
+            raise GaitMetricsError(error_msg) from e
         
         if progress_callback:
             progress_callback(95, "Finalizing analysis results...")
