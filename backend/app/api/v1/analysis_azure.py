@@ -1341,7 +1341,30 @@ async def process_analysis_azure(
             
             logger.info(f"[{request_id}] 🎬 STARTING VIDEO ANALYSIS: video_path={video_path}, fps={fps}, view_type={view_type}")
             logger.info(f"[{request_id}] 🎬 Analysis will call progress_callback during processing")
+            # CRITICAL: Verify heartbeat thread is still running before starting video processing
             heartbeat_is_alive = heartbeat_thread.is_alive() if heartbeat_thread else False
+            logger.error(f"[{request_id}] 🎬🎬🎬 VIDEO PROCESSING START DIAGNOSTIC 🎬🎬🎬")
+            logger.error(f"[{request_id}] 🎬 About to start video analysis for {analysis_id}")
+            logger.error(f"[{request_id}] 🎬 Heartbeat thread exists: {heartbeat_thread is not None}")
+            logger.error(f"[{request_id}] 🎬 Heartbeat thread is_alive: {heartbeat_is_alive}")
+            logger.error(f"[{request_id}] 🎬 Heartbeat thread ID: {heartbeat_thread.ident if heartbeat_thread else None}")
+            logger.error(f"[{request_id}] 🎬 Analysis in memory: {analysis_id in db_service._mock_storage if db_service else False}")
+            
+            if not heartbeat_is_alive:
+                logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Heartbeat thread is NOT ALIVE before video processing! ❌❌❌")
+                logger.error(f"[{request_id}] ❌ Analysis {analysis_id} will become invisible during processing!")
+                logger.error(f"[{request_id}] ❌ Attempting to restart heartbeat thread...")
+                try:
+                    heartbeat_thread = threading.Thread(target=thread_based_heartbeat, daemon=False, name=f"heartbeat-{analysis_id[:8]}-restart")
+                    heartbeat_thread.start()
+                    time.sleep(0.2)
+                    if heartbeat_thread.is_alive():
+                        logger.error(f"[{request_id}] ✅ Heartbeat thread restarted successfully")
+                    else:
+                        logger.error(f"[{request_id}] ❌ Heartbeat thread restart failed")
+                except Exception as restart_error:
+                    logger.error(f"[{request_id}] ❌ Failed to restart heartbeat thread: {restart_error}", exc_info=True)
+            
             logger.info(f"[{request_id}] 🎬 Heartbeat thread is running: {heartbeat_is_alive} (thread ID: {heartbeat_thread.ident if heartbeat_thread else None})")
             analysis_result = await gait_service.analyze_video(
                 video_path,
