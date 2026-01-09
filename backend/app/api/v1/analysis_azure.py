@@ -287,15 +287,15 @@ async def upload_video(
                 if file_size > MAX_FILE_SIZE:
                     tmp_file.close()
                     os.unlink(tmp_path)
-                            logger.error(
-                                f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
-                                extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
-                            )
-                            raise ValidationError(
-                                f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
-                                field="file",
-                                details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
-                            )
+                    logger.error(
+                        f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
+                        extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
+                    )
+                    raise ValidationError(
+                        f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
+                        field="file",
+                        details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
+                    )
                     
                     tmp_file.close()
                     upload_duration = time.time() - upload_start_time
