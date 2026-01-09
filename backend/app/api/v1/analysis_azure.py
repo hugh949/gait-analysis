@@ -245,8 +245,8 @@ async def upload_video(
         
         # Create temp file with proper error handling
         try:
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
-        tmp_path = tmp_file.name
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
+            tmp_path = tmp_file.name
             logger.debug(f"[{request_id}] Created temp file: {tmp_path}")
         except OSError as e:
             logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
