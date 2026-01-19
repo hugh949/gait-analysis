@@ -248,14 +248,23 @@ export default function Testing() {
               </select>
             </div>
             <div className="config-item">
-              <label>Reference Length (mm):</label>
+              <label>
+                Reference Length (mm):
+                <span className="help-icon" title="Click for info">ℹ️</span>
+              </label>
               <input
                 type="number"
                 value={referenceLength}
                 onChange={(e) => setReferenceLength(e.target.value)}
-                placeholder="Optional"
+                placeholder="Optional - leave empty for auto-calibration"
                 min="0"
               />
+              <div className="help-text">
+                <strong>What is this?</strong> A known measurement in millimeters (e.g., height of a person, 
+                length of a reference object in the video) used to convert pixel measurements to real-world 
+                measurements. <strong>Leave empty</strong> if you don't have a reference - the system will 
+                auto-calibrate using typical human proportions.
+              </div>
             </div>
           </div>
         </div>
@@ -308,12 +317,22 @@ export default function Testing() {
                   <button
                     onClick={() => executeStep(stepNum)}
                     disabled={!step.available || step.running}
-                    className="btn-step"
+                    className={`btn-step ${!step.available ? 'btn-disabled' : ''}`}
                   >
                     {step.running ? (
                       <>
                         <Loader2 className="spinner" />
-                        Running...
+                        Processing Step {stepNum}...
+                      </>
+                    ) : step.completed ? (
+                      <>
+                        <CheckCircle />
+                        Step {stepNum} Complete - Run Again
+                      </>
+                    ) : !step.available ? (
+                      <>
+                        <XCircle />
+                        Step {stepNum} Not Available
                       </>
                     ) : (
                       <>
