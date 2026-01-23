@@ -312,6 +312,15 @@ class AzureSQLService:
                 logger.error(f"SAVE: Temp file does not exist before rename: {temp_file}")
                 raise FileNotFoundError(f"Temp file not found: {temp_file}")
             
+            # CRITICAL: Verify temp file has content before renaming
+            temp_file_size = os.path.getsize(temp_file)
+            if temp_file_size == 0:
+                logger.error(f"SAVE: Temp file is empty (0 bytes): {temp_file}")
+                os.unlink(temp_file)  # Remove empty temp file
+                raise ValueError(f"Temp file is empty: {temp_file}")
+            
+            logger.info(f"SAVE: Temp file size: {temp_file_size} bytes, contains {len(AzureSQLService._mock_storage)} analyses")
+            
             temp_file_size = os.path.getsize(temp_file)
             if temp_file_size == 0:
                 logger.error(f"SAVE: Temp file is empty (0 bytes) before rename: {temp_file}")

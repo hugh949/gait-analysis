@@ -2245,6 +2245,24 @@ async def get_analysis(
         
         if not analysis:
             logger.warning(f"[{request_id}] ⚠️ Analysis not found in database", extra={"analysis_id": analysis_id})
+            
+            # CRITICAL: Check if this might be a recently completed analysis that was lost
+            # Log diagnostic information for debugging
+            logger.error(
+                f"[{request_id}] 🔍🔍🔍 DIAGNOSTIC: Analysis {analysis_id} not found. "
+                f"This may indicate:\n"
+                f"  1. Analysis was lost during container restart\n"
+                f"  2. File storage corruption or deletion\n"
+                f"  3. Multi-worker sync issue\n"
+                f"  4. Analysis was never created\n"
+                f"Check storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}",
+                extra={
+                    "analysis_id": analysis_id,
+                    "storage_file": getattr(db_service, '_mock_storage_file', 'unknown') if hasattr(db_service, '_mock_storage_file') else 'unknown',
+                    "use_mock": getattr(db_service, '_use_mock', False) if hasattr(db_service, '_use_mock') else 'unknown'
+                }
+            )
+            
             # Don't recreate - return 404 so frontend knows analysis doesn't exist
             # The defensive recreation was causing stuck states
             raise HTTPException(
@@ -2252,7 +2270,10 @@ async def get_analysis(
                 detail={
                     "error": "NOT_FOUND",
                     "message": f"Analysis with ID {analysis_id} not found",
-                    "details": {"analysis_id": analysis_id}
+                    "details": {
+                        "analysis_id": analysis_id,
+                        "diagnostic": "Analysis may have been lost during container restart or file storage issue. Check backend logs for 🔍🔍🔍 diagnostic messages."
+                    }
                 }
             )
         
