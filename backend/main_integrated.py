@@ -77,7 +77,6 @@ except Exception as e:
 # Import testing router (for development/testing only)
 try:
     from app.api.v1.testing_azure import router as testing_router
-    app.include_router(testing_router, prefix="/api/v1")
     logger.info("✓ Testing router imported successfully")
     for route in testing_router.routes:
         if hasattr(route, 'path') and hasattr(route, 'methods'):
@@ -85,6 +84,15 @@ try:
 except Exception as e:
     logger.warning(f"Failed to import testing router (non-critical): {e}")
     # Testing router is optional - don't fail if it's not available
+    testing_router = None
+
+# Import logs router (for monitoring and debugging)
+try:
+    from app.api.v1.logs_azure import router as logs_router
+    logger.info("✓ Logs router imported successfully")
+except Exception as e:
+    logger.warning(f"Failed to import logs router (non-critical): {e}")
+    logs_router = None
 
 # Get paths
 # In Docker, frontend is at /app/frontend/dist (copied from backend/frontend-dist)
@@ -286,6 +294,14 @@ app.add_middleware(
 # API routes - must be registered before catch-all
 # These routes are more specific and will match before the catch-all
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["analysis"])
+
+# Include testing router if available
+if testing_router:
+    app.include_router(testing_router, prefix="/api/v1", tags=["testing"])
+
+# Include logs router if available (for monitoring)
+if logs_router:
+    app.include_router(logs_router, prefix="/api/v1", tags=["logs"])
 
 # CRITICAL: Log registered routes for debugging
 logger.info("Registered API routes:")
