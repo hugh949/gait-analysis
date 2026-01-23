@@ -973,9 +973,12 @@ class GaitAnalysisService:
         
         if progress_callback:
             try:
-                progress_callback(97, "All 4 steps complete - preparing final report...")
-                progress_callback(98, "Saving analysis results...")
-                progress_callback(99, "Finalizing report generation...")
+                progress_callback(90, "All 4 steps complete - preparing final report...")
+                progress_callback(92, "Validating processing results...")
+                progress_callback(94, "Preparing analysis report...")
+                progress_callback(96, "Finalizing results...")
+                progress_callback(97, "Saving analysis results to database...")
+                progress_callback(98, "Finalizing report generation...")
                 # Don't call 100% here - let the API layer do it after database update
             except Exception as e:
                 logger.warning(f"Error in progress callback at completion: {e}")

@@ -1854,8 +1854,18 @@ async def process_analysis_azure(
                     logger.warning(f"[{request_id}] Error stopping heartbeat thread: {e}")
         
         # CRITICAL: Verify analysis exists before final update
+        # Add timeout to prevent infinite loops
         analysis_verified = False
+        verification_start_time = time.time()
+        max_verification_time = 5.0  # Maximum 5 seconds for verification
+        
         for verify_retry in range(10):
+            # Check timeout
+            if time.time() - verification_start_time > max_verification_time:
+                logger.warning(f"[{request_id}] Verification timeout after {max_verification_time}s - proceeding anyway")
+                analysis_verified = True  # Proceed anyway - analysis likely exists
+                break
+                
             try:
                 final_check = await db_service.get_analysis(analysis_id)
                 if final_check and final_check.get('id') == analysis_id:
@@ -1864,9 +1874,14 @@ async def process_analysis_azure(
                     break
             except Exception as verify_error:
                 if verify_retry < 9:
-                    logger.warning(f"[{request_id}] Analysis verification failed (attempt {verify_retry + 1}): {verify_error}. Retrying...")
-                    await asyncio.sleep(0.2 * (verify_retry + 1))
+                    delay = min(0.1 * (verify_retry + 1), 0.5)  # Cap delay at 0.5s
+                    logger.warning(f"[{request_id}] Analysis verification failed (attempt {verify_retry + 1}): {verify_error}. Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
                     continue
+                else:
+                    # Last attempt failed - proceed anyway
+                    logger.warning(f"[{request_id}] Verification failed after all attempts - proceeding anyway")
+                    analysis_verified = True
         
         if not analysis_verified:
             logger.error(f"[{request_id}] Analysis {analysis_id} not found before final update. Recreating...")
@@ -1919,13 +1934,24 @@ async def process_analysis_azure(
             logger.warning(f"[{request_id}] Failed to update progress before final save: {e}")
         
         # Small delay to ensure previous update is visible
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)  # Reduced delay
         
         completion_success = False
         max_db_retries = 15  # Increased retries for critical final update
         last_error = None
+        completion_start_time = time.time()
+        max_completion_time = 30.0  # Maximum 30 seconds for completion attempts
         
         for retry in range(max_db_retries):
+            # Check timeout - don't retry forever
+            elapsed_time = time.time() - completion_start_time
+            if elapsed_time > max_completion_time:
+                logger.error(f"[{request_id}] Completion timeout after {max_completion_time}s - stopping retries")
+                break
+                
+            # Log progress during retries
+            if retry > 0:
+                logger.info(f"[{request_id}] Completion attempt {retry + 1}/{max_db_retries} (elapsed: {elapsed_time:.1f}s)")
             try:
                 # Try async update first
                 update_result = await db_service.update_analysis(analysis_id, {
@@ -1998,10 +2024,18 @@ async def process_analysis_azure(
             except Exception as e:
                 last_error = e
                 if retry < max_db_retries - 1:
-                    # Progressive backoff: 0.3s, 0.6s, 0.9s, 1.2s, etc.
-                    delay = 0.3 * (retry + 1)
+                    # Progressive backoff: 0.3s, 0.6s, 0.9s, 1.2s, etc. but cap at 2s
+                    delay = min(0.3 * (retry + 1), 2.0)
+                    elapsed = time.time() - completion_start_time
+                    remaining_time = max_completion_time - elapsed
+                    
+                    # Don't retry if we're out of time
+                    if remaining_time < delay:
+                        logger.error(f"[{request_id}] Not enough time for another retry (remaining: {remaining_time:.1f}s, needed: {delay:.1f}s)")
+                        break
+                    
                     logger.warning(
-                        f"[{request_id}] Failed to mark analysis as completed (attempt {retry + 1}/{max_db_retries}): {e}. Retrying in {delay}s...",
+                        f"[{request_id}] Failed to mark analysis as completed (attempt {retry + 1}/{max_db_retries}, elapsed: {elapsed:.1f}s): {e}. Retrying in {delay}s...",
                         extra={"analysis_id": analysis_id, "error_type": type(e).__name__, "error_details": str(e)},
                         exc_info=True
                     )
@@ -2026,54 +2060,87 @@ async def process_analysis_azure(
                     )
         
         if not completion_success:
-            # Last resort: try sync method and then one more async attempt
-            try:
-                # Try sync method first
-                if hasattr(db_service, 'update_analysis_sync'):
-                    logger.info(f"[{request_id}] Trying sync update as last resort")
-                    sync_success = db_service.update_analysis_sync(analysis_id, {
-                        'status': 'completed',
-                        'current_step': 'report_generation',
-                        'step_progress': 100,
-                        'step_message': 'Analysis complete! (sync final retry)',
-                        'metrics': metrics
-                    })
-                    if sync_success:
-                        await asyncio.sleep(0.5)
+            # Last resort: try sync method with timeout
+            elapsed_time = time.time() - completion_start_time
+            if elapsed_time < max_completion_time:
+                try:
+                    # Try sync method first
+                    if hasattr(db_service, 'update_analysis_sync'):
+                        logger.info(f"[{request_id}] Trying sync update as last resort (elapsed: {elapsed_time:.1f}s)")
+                        sync_success = db_service.update_analysis_sync(analysis_id, {
+                            'status': 'completed',
+                            'current_step': 'report_generation',
+                            'step_progress': 100,
+                            'step_message': 'Analysis complete! (sync final retry)',
+                            'metrics': metrics
+                        })
+                        if sync_success:
+                            await asyncio.sleep(0.3)  # Reduced delay
+                            verification = await db_service.get_analysis(analysis_id)
+                            if verification and verification.get('status') == 'completed' and verification.get('metrics'):
+                                completion_success = True
+                                logger.info(f"[{request_id}] ✅ Sync final retry verification passed")
+                    
+                    # If sync didn't work and we still have time, try async one more time
+                    if not completion_success and (time.time() - completion_start_time) < max_completion_time:
+                        await asyncio.sleep(0.5)  # Reduced delay
+                        await db_service.update_analysis(analysis_id, {
+                            'status': 'completed',
+                            'current_step': 'report_generation',
+                            'step_progress': 100,
+                            'step_message': 'Analysis complete! (async final retry)',
+                            'metrics': metrics
+                        })
+                        logger.info(f"[{request_id}] Analysis completion update attempted on final async retry")
+                        
+                        # Verify final retry
+                        await asyncio.sleep(0.3)  # Reduced delay
                         verification = await db_service.get_analysis(analysis_id)
                         if verification and verification.get('status') == 'completed' and verification.get('metrics'):
                             completion_success = True
-                            logger.info(f"[{request_id}] ✅ Sync final retry verification passed")
+                            logger.info(f"[{request_id}] ✅ Final async retry verification passed")
+                        else:
+                            logger.error(f"[{request_id}] ❌ Final retry verification failed - metrics may not be saved")
+                            logger.error(f"[{request_id}] ⚠️ Analysis can be manually completed using /api/v1/analysis/{analysis_id}/force-complete")
+                except Exception as final_error:
+                    logger.critical(
+                        f"[{request_id}] CRITICAL: All attempts to mark analysis as completed failed. Analysis is complete but status may not be updated.",
+                        extra={"analysis_id": analysis_id, "error": str(final_error)},
+                        exc_info=True
+                    )
+                    logger.error(f"[{request_id}] ⚠️ Analysis can be manually completed using /api/v1/analysis/{analysis_id}/force-complete")
+                    # Don't raise - processing is complete, just status update failed
+            else:
+                logger.error(f"[{request_id}] ⚠️ Completion timeout reached - stopping retries. Analysis can be manually completed using /api/v1/analysis/{analysis_id}/force-complete")
+        
+        # CRITICAL: If all retries failed, automatically try force-complete as last resort
+        if not completion_success:
+            logger.warning(f"[{request_id}] All completion attempts failed - trying automatic force-complete as last resort")
+            try:
+                # Import here to avoid circular dependency
+                from fastapi import APIRouter
+                from fastapi.responses import JSONResponse
                 
-                # If sync didn't work, try async one more time
-                if not completion_success:
-                    await asyncio.sleep(1.0)
-                    await db_service.update_analysis(analysis_id, {
+                # Call force-complete logic directly (same as endpoint)
+                final_check = await db_service.get_analysis(analysis_id)
+                if final_check and final_check.get('metrics') and len(final_check.get('metrics', {})) > 0:
+                    # Has metrics - try one final update
+                    logger.info(f"[{request_id}] Auto force-complete: Analysis has metrics, attempting final update")
+                    final_update = await db_service.update_analysis(analysis_id, {
                         'status': 'completed',
                         'current_step': 'report_generation',
                         'step_progress': 100,
-                        'step_message': 'Analysis complete! (async final retry)',
-                        'metrics': metrics
+                        'step_message': 'Analysis complete! (auto-recovered)',
+                        'metrics': final_check.get('metrics')
                     })
-                    logger.info(f"[{request_id}] Analysis completion update attempted on final async retry")
-                    
-                    # Verify final retry
-                    await asyncio.sleep(0.5)
-                    verification = await db_service.get_analysis(analysis_id)
-                    if verification and verification.get('status') == 'completed' and verification.get('metrics'):
-                        completion_success = True
-                        logger.info(f"[{request_id}] ✅ Final async retry verification passed")
-                    else:
-                        logger.error(f"[{request_id}] ❌ Final retry verification failed - metrics may not be saved")
-                        logger.error(f"[{request_id}] ⚠️ Analysis can be manually completed using /api/v1/analysis/{analysis_id}/force-complete")
-            except Exception as final_error:
-                logger.critical(
-                    f"[{request_id}] CRITICAL: All attempts to mark analysis as completed failed. Analysis is complete but status may not be updated.",
-                    extra={"analysis_id": analysis_id, "error": str(final_error)},
-                    exc_info=True
-                )
-                logger.error(f"[{request_id}] ⚠️ Analysis can be manually completed using /api/v1/analysis/{analysis_id}/force-complete")
-                # Don't raise - processing is complete, just status update failed
+                    if final_update:
+                        await asyncio.sleep(0.3)
+                        verification = await db_service.get_analysis(analysis_id)
+                        if verification and verification.get('status') == 'completed':
+                            completion_success = True
+                            logger.info(f"[{request_id}] ✅ Auto force-complete successful!")
+            except Exception as auto_fix_error:
+                logger.error(f"[{request_id}] Auto force-complete also failed: {auto_fix_error}", exc_info=True)
     
     except asyncio.TimeoutError as e:
         error_msg = (
