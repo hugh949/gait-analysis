@@ -263,6 +263,8 @@ export default function AnalysisUpload() {
       setProgress(100)
       setStatus('processing')
       setCurrentStep('pose_estimation')
+      // Store analysis ID in localStorage for resume capability
+      localStorage.setItem('lastAnalysisId', id)
 
       // Wait a moment for the analysis to be fully written to the database
       // This prevents race conditions where the frontend polls before the backend has finished creating the record
@@ -425,10 +427,32 @@ export default function AnalysisUpload() {
           // Continue polling - more frequent during processing for better UX
           pollingIntervalRef.current = window.setTimeout(poll, 2000) // Poll every 2 seconds
         } else if (analysisStatus === 'completed') {
-          setStatus('completed')
-          setCurrentStep('report_generation')
-          setStepProgress(data.step_progress || 100)
-          setStepMessage(data.step_message || 'Analysis complete! Reports ready.')
+          // CRITICAL: Only mark as completed if metrics exist AND have meaningful data
+          // This prevents showing "View Report" when processing isn't truly done
+          const hasValidMetrics = data.metrics && 
+            Object.keys(data.metrics).length > 0 &&
+            (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
+          
+          if (hasValidMetrics) {
+            setStatus('completed')
+            setCurrentStep('report_generation')
+            setStepProgress(100)
+            setStepMessage(data.step_message || 'Analysis complete! Reports ready.')
+            // Stop polling
+            if (pollingIntervalRef.current) {
+              window.clearTimeout(pollingIntervalRef.current)
+              pollingIntervalRef.current = null
+            }
+            console.log('✅ Analysis truly completed with valid metrics')
+          } else {
+            // Status says completed but no valid metrics - still processing
+            console.warn('⚠️ Status is completed but no valid metrics - treating as processing')
+            setStatus('processing')
+            setCurrentStep(data.current_step || 'report_generation')
+            setStepProgress(data.step_progress || 95)
+            setStepMessage('Finalizing report and calculating metrics...')
+            pollingIntervalRef.current = window.setTimeout(poll, 2000)
+          }
         } else if (analysisStatus === 'failed') {
           setStatus('failed')
           setError(data.error || 'Analysis failed')
@@ -455,7 +479,7 @@ export default function AnalysisUpload() {
     poll()
   }
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     // Cancel upload if in progress
     if (xhrRef.current && (status === 'uploading' || status === 'processing')) {
       xhrRef.current.abort()
@@ -468,6 +492,11 @@ export default function AnalysisUpload() {
       pollingIntervalRef.current = null
     }
     
+    // Clear localStorage
+    if (analysisId) {
+      localStorage.removeItem('lastAnalysisId')
+    }
+    
     // Reset state
     setStatus('idle')
     setProgress(0)
@@ -478,6 +507,80 @@ export default function AnalysisUpload() {
     setFile(null)
     setError(null)
   }
+
+  // Check for existing processing analysis on mount
+  useEffect(() => {
+    const checkExistingAnalysis = async () => {
+      try {
+        // First, try to get any processing analyses from the list
+        const listResponse = await fetch(`${API_URL}/api/v1/analysis/list`)
+        if (listResponse.ok) {
+          const listData = await listResponse.json()
+          const processingAnalyses = (listData.analyses || []).filter(
+            (a: any) => a.status === 'processing'
+          )
+          
+          if (processingAnalyses.length > 0) {
+            // Use the most recent processing analysis
+            const latest = processingAnalyses.sort((a: any, b: any) => {
+              const dateA = new Date(a.updated_at || a.created_at || 0).getTime()
+              const dateB = new Date(b.updated_at || b.created_at || 0).getTime()
+              return dateB - dateA
+            })[0]
+            
+            const resumeId = latest.id
+            setAnalysisId(resumeId)
+            setStatus('processing')
+            setCurrentStep(latest.current_step || 'pose_estimation')
+            setStepProgress(latest.step_progress || 0)
+            setStepMessage(latest.step_message || 'Resuming analysis...')
+            localStorage.setItem('lastAnalysisId', resumeId)
+            // Start polling
+            pollAnalysisStatus(resumeId)
+            return
+          }
+        }
+        
+        // Fallback: Check localStorage for last analysis ID
+        const lastAnalysisId = localStorage.getItem('lastAnalysisId')
+        if (lastAnalysisId) {
+          // Check if it's still processing
+          const response = await fetch(`${API_URL}/api/v1/analysis/${lastAnalysisId}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (data.status === 'processing') {
+              // Resume tracking this analysis
+              setAnalysisId(lastAnalysisId)
+              setStatus('processing')
+              setCurrentStep(data.current_step || 'pose_estimation')
+              setStepProgress(data.step_progress || 0)
+              setStepMessage(data.step_message || 'Resuming analysis...')
+              // Start polling
+              pollAnalysisStatus(lastAnalysisId)
+            } else if (data.status === 'completed' && data.metrics && Object.keys(data.metrics).length > 0) {
+              // Completed with metrics - show completion message
+              setAnalysisId(lastAnalysisId)
+              setStatus('completed')
+              setCurrentStep('report_generation')
+              setStepProgress(100)
+            } else {
+              // Not found or invalid - clear it
+              localStorage.removeItem('lastAnalysisId')
+            }
+          } else {
+            // Not found - clear it
+            localStorage.removeItem('lastAnalysisId')
+          }
+        }
+      } catch (err) {
+        console.error('Error checking existing analysis:', err)
+        // Clear invalid analysis ID
+        localStorage.removeItem('lastAnalysisId')
+      }
+    }
+
+    checkExistingAnalysis()
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -711,7 +814,39 @@ export default function AnalysisUpload() {
             <p>Your gait analysis is ready. Click the button below to view your comprehensive report.</p>
             <div className="completion-actions">
               <button 
-                onClick={() => navigate(`/report/${analysisId}`)} 
+                onClick={async () => {
+                  // Double-verify analysis is truly completed with metrics before navigating
+                  try {
+                    const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`)
+                    if (response.ok) {
+                      const data = await response.json()
+                      const hasValidMetrics = data.metrics && 
+                        Object.keys(data.metrics).length > 0 &&
+                        (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
+                      
+                      if (data.status === 'completed' && hasValidMetrics) {
+                        navigate(`/report/${analysisId}`)
+                      } else {
+                        // Not truly complete - resume processing
+                        console.warn('Analysis not truly complete - resuming processing')
+                        setError('Analysis is still being finalized. Please wait a moment...')
+                        setStatus('processing')
+                        setCurrentStep(data.current_step || 'report_generation')
+                        setStepProgress(data.step_progress || 95)
+                        setStepMessage('Finalizing report...')
+                        // Resume polling
+                        if (analysisId) {
+                          pollAnalysisStatus(analysisId)
+                        }
+                      }
+                    } else {
+                      setError('Failed to verify analysis status. Please try again.')
+                    }
+                  } catch (err) {
+                    console.error('Error verifying analysis:', err)
+                    setError('Failed to verify analysis status. Please try again.')
+                  }
+                }}
                 className="btn btn-primary btn-large"
               >
                 View Report
