@@ -876,7 +876,8 @@ class GaitAnalysisService:
             
             if progress_callback:
                 try:
-                    progress_callback(90, "Gait metrics calculation complete - validating results...")
+                    progress_callback(85, "Gait metrics calculation complete - validating results...")
+                    progress_callback(88, "Validating metrics quality and completeness...")
                 except Exception as e:
                     logger.warning(f"Error in progress callback after metrics calculation: {e}")
         except GaitMetricsError:
@@ -895,8 +896,10 @@ class GaitAnalysisService:
         
         if progress_callback:
             try:
-                progress_callback(92, "Generating analysis report...")
-                progress_callback(95, "Finalizing analysis results...")
+                progress_callback(90, "Starting report generation...")
+                progress_callback(92, "Validating all processing steps...")
+                progress_callback(94, "Preparing analysis report...")
+                progress_callback(96, "Finalizing results...")
             except Exception as e:
                 logger.warning(f"Error in progress callback during report generation: {e}")
         
@@ -969,8 +972,10 @@ class GaitAnalysisService:
         
         if progress_callback:
             try:
-                progress_callback(98, "All 4 steps complete - finalizing report...")
-                progress_callback(100, "Analysis complete!")
+                progress_callback(97, "All 4 steps complete - preparing final report...")
+                progress_callback(98, "Saving analysis results...")
+                progress_callback(99, "Finalizing report generation...")
+                # Don't call 100% here - let the API layer do it after database update
             except Exception as e:
                 logger.warning(f"Error in progress callback at completion: {e}")
         

@@ -425,7 +425,12 @@ export default function AnalysisUpload() {
           console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
           
           // Continue polling - more frequent during processing for better UX
-          pollingIntervalRef.current = window.setTimeout(poll, 2000) // Poll every 2 seconds
+          // If we're in report_generation step and progress is high, poll more frequently
+          if (mappedStep === 'report_generation' && backendProgress >= 95) {
+            pollingIntervalRef.current = window.setTimeout(poll, 1000) // Poll every 1 second near completion
+          } else {
+            pollingIntervalRef.current = window.setTimeout(poll, 2000) // Poll every 2 seconds normally
+          }
         } else if (analysisStatus === 'completed') {
           // CRITICAL: Only mark as completed if metrics exist AND have meaningful data
           // This prevents showing "View Report" when processing isn't truly done
@@ -448,10 +453,11 @@ export default function AnalysisUpload() {
             // Status says completed but no valid metrics - still processing
             console.warn('⚠️ Status is completed but no valid metrics - treating as processing')
             setStatus('processing')
-            setCurrentStep(data.current_step || 'report_generation')
-            setStepProgress(data.step_progress || 95)
-            setStepMessage('Finalizing report and calculating metrics...')
-            pollingIntervalRef.current = window.setTimeout(poll, 2000)
+            setCurrentStep('report_generation')
+            setStepProgress(data.step_progress || 98)
+            setStepMessage(data.step_message || 'Saving analysis results to database...')
+            // Poll more frequently when finalizing
+            pollingIntervalRef.current = window.setTimeout(poll, 1000)
           }
         } else if (analysisStatus === 'failed') {
           setStatus('failed')
@@ -776,12 +782,14 @@ export default function AnalysisUpload() {
                 </div>
               </div>
               
-              <div className={`step-card ${currentStep === 'report_generation' ? 'active' : 'pending'}`}>
+              <div className={`step-card ${currentStep === 'report_generation' ? 'active' : currentStep && ['pose_estimation', '3d_lifting', 'metrics_calculation'].includes(currentStep) ? 'pending' : 'pending'}`}>
                 <div className="step-indicator">
                   {currentStep === 'report_generation' ? (
                     <div className="step-spinner">
                       <Loader2 className="spinner-icon" />
                     </div>
+                  ) : currentStep && ['pose_estimation', '3d_lifting', 'metrics_calculation'].includes(currentStep) ? (
+                    <div className="step-number">4</div>
                   ) : (
                     <div className="step-number">4</div>
                   )}
@@ -789,7 +797,11 @@ export default function AnalysisUpload() {
                 <div className="step-content">
                   <div className="step-title">Report Generation</div>
                   <div className="step-description">
-                    {currentStep === 'report_generation' ? stepMessage || 'Generating detailed analysis reports...' : 'Generating analysis reports'}
+                    {currentStep === 'report_generation' 
+                      ? (stepMessage || 'Generating detailed analysis reports...')
+                      : currentStep && ['pose_estimation', '3d_lifting', 'metrics_calculation'].includes(currentStep)
+                      ? 'Waiting for previous steps...'
+                      : 'Generating analysis reports'}
                   </div>
                   {currentStep === 'report_generation' && stepProgress > 0 && (
                     <div className="step-progress-indicator">

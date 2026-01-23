@@ -1908,6 +1908,19 @@ async def process_analysis_azure(
             logger.error(f"[{request_id}] Available metrics keys: {list(metrics.keys())}")
             raise GaitMetricsError(error_msg, details={"analysis_id": analysis_id, "available_metrics": list(metrics.keys())})
         
+        # CRITICAL: Update progress to show we're saving results
+        try:
+            await db_service.update_analysis(analysis_id, {
+                'current_step': 'report_generation',
+                'step_progress': 98,
+                'step_message': 'Saving analysis results to database...'
+            })
+        except Exception as e:
+            logger.warning(f"[{request_id}] Failed to update progress before final save: {e}")
+        
+        # Small delay to ensure previous update is visible
+        await asyncio.sleep(0.5)
+        
         completion_success = False
         max_db_retries = 10  # Increased retries for critical final update
         for retry in range(max_db_retries):
@@ -1920,6 +1933,15 @@ async def process_analysis_azure(
                     'metrics': metrics
                 })
                 completion_success = True
+                
+                # CRITICAL: Verify the update was successful by reading it back
+                await asyncio.sleep(0.2)  # Small delay for database consistency
+                verification = await db_service.get_analysis(analysis_id)
+                if verification and verification.get('status') == 'completed' and verification.get('metrics'):
+                    logger.info(f"[{request_id}] ✅ Verification passed - analysis marked as completed with metrics")
+                else:
+                    logger.warning(f"[{request_id}] ⚠️ Verification: status={verification.get('status') if verification else 'None'}, has_metrics={bool(verification.get('metrics') if verification else False)}")
+                    # Don't fail - just log warning
                 logger.info(
                     f"[{request_id}] Analysis completed successfully",
                     extra={
@@ -1976,6 +1998,14 @@ async def process_analysis_azure(
                     'metrics': metrics
                 })
                 logger.info(f"[{request_id}] Analysis completion update succeeded on final retry")
+                
+                # Verify final retry
+                await asyncio.sleep(0.3)
+                verification = await db_service.get_analysis(analysis_id)
+                if verification and verification.get('status') == 'completed' and verification.get('metrics'):
+                    logger.info(f"[{request_id}] ✅ Final retry verification passed")
+                else:
+                    logger.error(f"[{request_id}] ❌ Final retry verification failed - metrics may not be saved")
             except Exception as final_error:
                 logger.critical(
                     f"[{request_id}] CRITICAL: All attempts to mark analysis as completed failed. Analysis is complete but status may not be updated.",
