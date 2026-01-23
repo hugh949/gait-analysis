@@ -127,8 +127,6 @@ export default function Report() {
   // Use professional assessments from backend if available
   const fallRiskAssessment = metrics.fall_risk_assessment || {}
   const functionalMobility = metrics.functional_mobility || {}
-  const fallRisk = fallRiskAssessment.risk_level || (metrics.walking_speed ? 
-    (metrics.walking_speed / 1000 < 1.0 ? 'High' : metrics.walking_speed / 1000 < 1.2 ? 'Moderate' : 'Low') : null)
   
   // Calculate metrics for different sections
   const walkingSpeed = metrics.walking_speed ? metrics.walking_speed / 1000 : null
@@ -417,8 +415,10 @@ export default function Report() {
               {metrics.directional_analysis && (
                 <div className="directional-info">
                   <h3>Multi-Directional Analysis</h3>
-                  <p><strong>Primary Direction:</strong> {metrics.directional_analysis.primary_direction}</p>
-                  <p><strong>Confidence:</strong> {(metrics.directional_analysis.direction_confidence * 100).toFixed(1)}%</p>
+                  <p><strong>Primary Direction:</strong> {metrics.directional_analysis.primary_direction || 'Unknown'}</p>
+                  <p><strong>Confidence:</strong> {metrics.directional_analysis.direction_confidence 
+                    ? `${(metrics.directional_analysis.direction_confidence * 100).toFixed(1)}%`
+                    : 'N/A'}</p>
                 </div>
               )}
 
