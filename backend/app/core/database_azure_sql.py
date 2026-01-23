@@ -321,11 +321,6 @@ class AzureSQLService:
             
             logger.info(f"SAVE: Temp file size: {temp_file_size} bytes, contains {len(AzureSQLService._mock_storage)} analyses")
             
-            temp_file_size = os.path.getsize(temp_file)
-            if temp_file_size == 0:
-                logger.error(f"SAVE: Temp file is empty (0 bytes) before rename: {temp_file}")
-                raise ValueError(f"Temp file is empty: {temp_file}")
-            
             logger.debug(f"SAVE: Attempting atomic rename from {temp_file} ({temp_file_size} bytes) to {AzureSQLService._mock_storage_file}")
             os.replace(temp_file, AzureSQLService._mock_storage_file)
             
