@@ -190,8 +190,24 @@
 .overall-progress-message {
   font-size: 0.9375rem;
   color: var(--apple-text-primary);
-  margin: 0;
+  margin: 0 0 0.75rem 0;
   font-weight: 500;
+}
+
+.progress-time-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--apple-text-secondary);
+  margin-top: 0.5rem;
+}
+
+.time-elapsed,
+.time-remaining {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* Step Cards */
@@ -420,6 +436,47 @@
 .status-completed p {
   color: var(--apple-text-secondary);
   margin-bottom: 1.5rem;
+}
+
+/* Completion Message */
+.completion-message {
+  background: linear-gradient(135deg, rgba(52, 199, 89, 0.1) 0%, rgba(52, 199, 89, 0.05) 100%);
+  border-radius: var(--apple-border-radius);
+  padding: 2rem;
+  text-align: center;
+  border: 1px solid rgba(52, 199, 89, 0.2);
+  margin-top: 2rem;
+}
+
+.completion-icon {
+  color: var(--apple-green);
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.completion-message h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--apple-text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.completion-message p {
+  color: var(--apple-text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
 }
 
 /* Buttons */

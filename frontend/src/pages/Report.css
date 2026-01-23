@@ -46,6 +46,32 @@
   border-left: 4px solid #ffc107;
 }
 
+.processing-redirect {
+  background: white;
+  border-radius: 12px;
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.processing-redirect h2 {
+  color: #2c3e50;
+  margin-bottom: 1rem;
+}
+
+.processing-redirect p {
+  color: #666;
+  margin-bottom: 2rem;
+}
+
+.redirect-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 /* Processing Container */
 .processing-container {
   background: white;

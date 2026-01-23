@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import AnalysisUpload from './pages/AnalysisUpload'
-import ViewGait from './pages/ViewGait'
+import ViewReports from './pages/ViewReports'
 import Report from './pages/Report'
 import Testing from './pages/Testing'
 
@@ -15,9 +15,9 @@ function App() {
             <AnalysisUpload />
           </Layout>
         } />
-        <Route path="/view-gait" element={
+        <Route path="/view-reports" element={
           <Layout>
-            <ViewGait />
+            <ViewReports />
           </Layout>
         } />
         <Route path="/report/:analysisId" element={

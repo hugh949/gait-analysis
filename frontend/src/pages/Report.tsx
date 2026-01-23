@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Loader2, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import './Report.css'
 
 const getApiUrl = () => {
@@ -74,40 +74,6 @@ export default function Report() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [startTime] = useState<number>(Date.now())
-  const pollingIntervalRef = useRef<number | null>(null)
-
-  const fetchAnalysis = async () => {
-    if (!analysisId) return
-
-    try {
-      const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`)
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch analysis: ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      setAnalysis(data)
-      
-      // Stop polling if analysis is completed or failed
-      if (data.status === 'completed' || data.status === 'failed') {
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current)
-          pollingIntervalRef.current = null
-        }
-      }
-    } catch (err: any) {
-      console.error('Error fetching analysis:', err)
-      setError(err.message || 'Failed to load analysis')
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
     if (!analysisId) {
@@ -116,35 +82,26 @@ export default function Report() {
       return
     }
 
-    // Initial fetch
-    fetchAnalysis()
+    const fetchAnalysis = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`)
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch analysis: ${response.statusText}`)
+        }
 
-      // Set up polling if status is processing
-    if (analysis?.status === 'processing' || !analysis) {
-      pollingIntervalRef.current = window.setInterval(() => {
-        fetchAnalysis()
-      }, 2000) // Poll every 2 seconds
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
+        const data = await response.json()
+        setAnalysis(data)
+      } catch (err: any) {
+        console.error('Error fetching analysis:', err)
+        setError(err.message || 'Failed to load analysis')
+      } finally {
+        setLoading(false)
       }
     }
-  }, [analysisId])
 
-  // Update polling when status changes
-  useEffect(() => {
-    if (analysis?.status === 'processing' && !pollingIntervalRef.current) {
-      pollingIntervalRef.current = window.setInterval(() => {
-        fetchAnalysis()
-      }, 2000)
-    } else if (analysis?.status !== 'processing' && pollingIntervalRef.current) {
-      window.clearInterval(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
-    }
-  }, [analysis?.status])
+    fetchAnalysis()
+  }, [analysisId])
 
   if (loading) {
     return (
@@ -160,19 +117,38 @@ export default function Report() {
         <div className="error-message">
           <h2>Error</h2>
           <p>{error || 'Analysis not found'}</p>
-          <button onClick={() => navigate('/view-gait')} className="btn btn-primary">
-            View All Analyses
+          <button onClick={() => navigate('/view-reports')} className="btn btn-primary">
+            View All Reports
           </button>
         </div>
       </div>
     )
   }
 
-  const metrics = analysis.metrics || {}
+
+  // If analysis is still processing, redirect to upload page
   const status = analysis.status || 'unknown'
-  const currentStep = analysis.current_step || null
-  const stepProgress = analysis.step_progress || 0
-  const progressMessage = analysis.step_message || ''
+  
+  if (status === 'processing') {
+    return (
+      <div className="report-page">
+        <div className="processing-redirect">
+          <h2>Analysis Still Processing</h2>
+          <p>This analysis is still being processed. Please check the progress on the Upload Video page.</p>
+          <div className="redirect-actions">
+            <button onClick={() => navigate('/upload')} className="btn btn-primary">
+              Go to Upload Video
+            </button>
+            <button onClick={() => navigate('/view-reports')} className="btn btn-secondary">
+              View Other Reports
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const metrics = analysis.metrics || {}
 
   // Use professional assessments from backend if available
   const fallRiskAssessment = metrics.fall_risk_assessment || {}
@@ -183,73 +159,6 @@ export default function Report() {
   const healthScore = functionalMobility.mobility_score || (walkingSpeed 
     ? Math.min(100, Math.max(0, Math.round((walkingSpeed / 1.4) * 100)))
     : null)
-
-  // Calculate elapsed time and estimated remaining time
-  const elapsedTime = Math.floor((Date.now() - startTime) / 1000) // seconds
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
-  }
-
-  // Estimate remaining time based on current progress
-  const estimatedRemaining = stepProgress > 0 && stepProgress < 100
-    ? Math.floor((elapsedTime / stepProgress) * (100 - stepProgress))
-    : null
-
-  // Step definitions
-  const steps = [
-    {
-      id: 'pose_estimation',
-      number: 1,
-      title: '2D Pose Estimation',
-      description: 'Extracting keypoints from video frames',
-      progressRange: [0, 60]
-    },
-    {
-      id: '3d_lifting',
-      number: 2,
-      title: '3D Lifting',
-      description: 'Converting 2D keypoints to 3D space',
-      progressRange: [60, 75]
-    },
-    {
-      id: 'metrics_calculation',
-      number: 3,
-      title: 'Gait Analysis',
-      description: 'Calculating gait parameters and metrics',
-      progressRange: [75, 95]
-    },
-    {
-      id: 'report_generation',
-      number: 4,
-      title: 'Report Generation',
-      description: 'Generating comprehensive analysis report',
-      progressRange: [95, 100]
-    }
-  ]
-
-  const getStepStatus = (stepId: string) => {
-    if (!currentStep) return 'pending'
-    
-    const currentStepIndex = steps.findIndex(s => s.id === currentStep)
-    const stepIndex = steps.findIndex(s => s.id === stepId)
-    
-    if (stepIndex < currentStepIndex) return 'completed'
-    if (stepIndex === currentStepIndex) return 'active'
-    return 'pending'
-  }
-
-  const getOverallProgress = () => {
-    if (!currentStep) return 0
-    
-    const currentStepData = steps.find(s => s.id === currentStep)
-    if (!currentStepData) return 0
-    
-    const [min, max] = currentStepData.progressRange
-    const stepProgressPercent = (stepProgress - 0) / 100 // Normalize step progress
-    return min + (max - min) * stepProgressPercent
-  }
 
   return (
     <div className="report-page">
@@ -262,105 +171,13 @@ export default function Report() {
         </div>
       </div>
 
-      {status === 'processing' && (
-        <div className="processing-container">
-          <div className="processing-header">
-            <h2>Analyzing Your Video</h2>
-            <p className="processing-subtitle">We're processing your gait analysis. This may take a few minutes.</p>
-          </div>
-
-          {/* Overall Progress */}
-          <div className="overall-progress-section">
-            <div className="overall-progress-header">
-              <span className="overall-progress-label">Overall Progress</span>
-              <span className="overall-progress-percent">{Math.round(getOverallProgress())}%</span>
-            </div>
-            <div className="overall-progress-bar-container">
-              <div 
-                className="overall-progress-bar" 
-                style={{ width: `${getOverallProgress()}%` }}
-              ></div>
-            </div>
-            <div className="progress-time-info">
-              <span className="time-elapsed">
-                <Clock size={16} /> Elapsed: {formatTime(elapsedTime)}
-              </span>
-              {estimatedRemaining && (
-                <span className="time-remaining">
-                  Estimated remaining: {formatTime(estimatedRemaining)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Step-by-Step Progress */}
-          <div className="steps-container">
-            <h3 className="steps-title">Processing Steps</h3>
-            <div className="steps-list">
-              {steps.map((step) => {
-                const stepStatus = getStepStatus(step.id)
-                const isActive = stepStatus === 'active'
-                const isCompleted = stepStatus === 'completed'
-                
-                return (
-                  <div 
-                    key={step.id} 
-                    className={`step-card ${stepStatus}`}
-                  >
-                    <div className="step-indicator">
-                      {isCompleted ? (
-                        <div className="step-icon completed">
-                          <CheckCircle size={24} />
-                        </div>
-                      ) : isActive ? (
-                        <div className="step-icon active">
-                          <Loader2 size={24} className="spinning" />
-                        </div>
-                      ) : (
-                        <div className="step-icon pending">
-                          <div className="step-number">{step.number}</div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="step-content">
-                      <div className="step-header">
-                        <h4 className="step-title">{step.title}</h4>
-                        {isActive && stepProgress > 0 && (
-                          <span className="step-progress-badge">{stepProgress}%</span>
-                        )}
-                      </div>
-                      <p className="step-description">
-                        {isActive && progressMessage 
-                          ? progressMessage 
-                          : step.description}
-                      </p>
-                      {isActive && stepProgress > 0 && (
-                        <div className="step-progress-bar-container">
-                          <div 
-                            className="step-progress-bar" 
-                            style={{ width: `${stepProgress}%` }}
-                          ></div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Auto-refresh indicator */}
-          <div className="auto-refresh-indicator">
-            <Loader2 size={14} className="spinning" />
-            <span>Auto-updating every 2 seconds...</span>
-          </div>
-        </div>
-      )}
-
       {status === 'failed' && (
         <div className="status-error">
           <AlertCircle size={24} />
           <p>Analysis failed. Please try uploading again.</p>
+          <button onClick={() => navigate('/upload')} className="btn btn-primary">
+            Upload New Video
+          </button>
         </div>
       )}
 
@@ -667,8 +484,8 @@ export default function Report() {
             View Video
           </a>
         )}
-        <button onClick={() => navigate('/view-gait')} className="btn btn-secondary">
-          View All Analyses
+        <button onClick={() => navigate('/view-reports')} className="btn btn-secondary">
+          View All Reports
         </button>
         <button onClick={() => navigate('/upload')} className="btn btn-primary">
           Upload New Video

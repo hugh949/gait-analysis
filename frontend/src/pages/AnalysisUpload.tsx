@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, X, CheckCircle } from 'lucide-react'
 import './AnalysisUpload.css'
 
 const getApiUrl = () => {
@@ -43,9 +43,18 @@ export default function AnalysisUpload() {
   const [stepProgress, setStepProgress] = useState<number>(0)
   const [stepMessage, setStepMessage] = useState<string>('')
   const navigate = useNavigate()
+  const xhrRef = useRef<XMLHttpRequest | null>(null)
+  const pollingIntervalRef = useRef<number | null>(null)
+  const [startTime] = useState<number>(Date.now())
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      // Check if there's already a video processing
+      if (status === 'uploading' || status === 'processing') {
+        setError('Please wait for the current video to finish processing before uploading a new one.')
+        e.target.value = '' // Clear the input
+        return
+      }
       setFile(e.target.files[0])
       setError(null)
     }
@@ -53,6 +62,12 @@ export default function AnalysisUpload() {
 
   const handleUpload = async () => {
     console.log('Upload button clicked')
+    
+    // Ensure only one video processes at a time
+    if (status === 'uploading' || status === 'processing') {
+      setError('A video is already being processed. Please wait for it to complete or cancel it first.')
+      return
+    }
     
     if (!file) {
       setError('Please select a file')
@@ -238,6 +253,7 @@ export default function AnalysisUpload() {
         
         xhr.open('POST', uploadUrl)
         xhr.timeout = 600000 // 10 minutes timeout for large files (increased from 5 minutes)
+        xhrRef.current = xhr // Store for cancel functionality
         xhr.send(formData)
       })
 
@@ -252,8 +268,20 @@ export default function AnalysisUpload() {
       // This prevents race conditions where the frontend polls before the backend has finished creating the record
       await new Promise(resolve => setTimeout(resolve, 500)) // 500ms delay
 
-      // Poll for analysis status
+        // Poll for analysis status
       pollAnalysisStatus(id)
+      
+      // Cleanup on unmount
+      return () => {
+        if (xhrRef.current) {
+          xhrRef.current.abort()
+          xhrRef.current = null
+        }
+        if (pollingIntervalRef.current) {
+          window.clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+      }
     } catch (err: any) {
       console.error('Upload error:', err)
       setError(err.message || 'Upload failed. Please try again.')
@@ -395,7 +423,7 @@ export default function AnalysisUpload() {
           console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
           
           // Continue polling - more frequent during processing for better UX
-          setTimeout(poll, 1000) // Poll every 1 second for real-time updates (Apple-style responsiveness)
+          pollingIntervalRef.current = window.setTimeout(poll, 2000) // Poll every 2 seconds
         } else if (analysisStatus === 'completed') {
           setStatus('completed')
           setCurrentStep('report_generation')
@@ -426,6 +454,42 @@ export default function AnalysisUpload() {
     // Start polling
     poll()
   }
+
+  const handleCancel = () => {
+    // Cancel upload if in progress
+    if (xhrRef.current && (status === 'uploading' || status === 'processing')) {
+      xhrRef.current.abort()
+      xhrRef.current = null
+    }
+    
+    // Stop polling
+    if (pollingIntervalRef.current) {
+      window.clearTimeout(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    
+    // Reset state
+    setStatus('idle')
+    setProgress(0)
+    setCurrentStep(null)
+    setStepProgress(0)
+    setStepMessage('')
+    setAnalysisId(null)
+    setFile(null)
+    setError(null)
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (xhrRef.current) {
+        xhrRef.current.abort()
+      }
+      if (pollingIntervalRef.current) {
+        window.clearTimeout(pollingIntervalRef.current)
+      }
+    }
+  }, [])
 
   return (
     <div className="upload-page">
@@ -474,8 +538,20 @@ export default function AnalysisUpload() {
         {status === 'processing' && (
           <div className="processing-details apple-style">
             <div className="processing-header">
-              <h3>Analyzing Your Video</h3>
-              <p className="processing-subtitle">This may take a few minutes. We'll keep you updated.</p>
+              <div className="processing-title-row">
+                <div>
+                  <h3>Analyzing Your Video</h3>
+                  <p className="processing-subtitle">This may take a few minutes. We'll keep you updated.</p>
+                </div>
+                <button
+                  onClick={handleCancel}
+                  className="btn-cancel"
+                  title="Cancel analysis"
+                >
+                  <X size={18} />
+                  Cancel
+                </button>
+              </div>
             </div>
             
             {/* Overall Progress Indicator */}
@@ -499,6 +575,16 @@ export default function AnalysisUpload() {
                 <p className="overall-progress-message">
                   {stepMessage || `Processing ${currentStep.replace('_', ' ')}...`}
                 </p>
+                <div className="progress-time-info">
+                  <span className="time-elapsed">
+                    Elapsed: {Math.floor((Date.now() - startTime) / 1000)}s
+                  </span>
+                  {stepProgress > 0 && stepProgress < 100 && (
+                    <span className="time-remaining">
+                      Est. remaining: {Math.floor(((Date.now() - startTime) / stepProgress) * (100 - stepProgress) / 1000)}s
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -618,15 +704,23 @@ export default function AnalysisUpload() {
 
         {status === 'completed' && analysisId && (
           <div className="completion-message">
+            <div className="completion-icon">
+              <CheckCircle size={48} />
+            </div>
             <h3>✅ Analysis Complete!</h3>
             <p>Your gait analysis is ready. Click the button below to view your comprehensive report.</p>
-            <div className="dashboard-links">
+            <div className="completion-actions">
               <button 
                 onClick={() => navigate(`/report/${analysisId}`)} 
-                className="btn btn-primary"
-                style={{ marginTop: '1rem', fontSize: '1.1rem', padding: '0.75rem 2rem' }}
+                className="btn btn-primary btn-large"
               >
                 View Report
+              </button>
+              <button 
+                onClick={() => navigate('/view-reports')} 
+                className="btn btn-secondary"
+              >
+                View All Reports
               </button>
             </div>
           </div>

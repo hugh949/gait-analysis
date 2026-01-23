@@ -24,16 +24,10 @@ export default function Layout({ children }: LayoutProps) {
               Upload Video
             </Link>
             <Link 
-              to="/view-gait" 
-              className={location.pathname === '/view-gait' ? 'active' : ''}
+              to="/view-reports" 
+              className={location.pathname === '/view-reports' || location.pathname.startsWith('/report/') ? 'active' : ''}
             >
-              View Gait
-            </Link>
-            <Link 
-              to="/testing" 
-              className={location.pathname === '/testing' ? 'active' : ''}
-            >
-              🧪 Testing
+              View Reports
             </Link>
           </nav>
         </div>
