@@ -633,9 +633,9 @@ async def upload_video(
                             logger.error(f"[{request_id}] 🔍   - Storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}")
                             storage_file = getattr(db_service, '_mock_storage_file', None)
                             if storage_file:
-                            logger.error(f"[{request_id}] 🔍   - File exists: {os.path.exists(storage_file)}")
-                            if os.path.exists(storage_file):
-                                logger.error(f"[{request_id}] 🔍   - File size: {os.path.getsize(storage_file)} bytes")
+                                logger.error(f"[{request_id}] 🔍   - File exists: {os.path.exists(storage_file)}")
+                                if os.path.exists(storage_file):
+                                    logger.error(f"[{request_id}] 🔍   - File size: {os.path.getsize(storage_file)} bytes")
                     
                     # CRITICAL: Try one more time with a longer delay
                     logger.warning(f"[{request_id}] ⚠️ Attempting final verification with extended delay...")
