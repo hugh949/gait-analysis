@@ -291,32 +291,21 @@ class GaitAnalysisService:
         # Store analysis_id for checkpoint management
         self._current_analysis_id = analysis_id or 'unknown'
         
-        # Check for existing checkpoints
+        # CRITICAL: Checkpoints are for RESUME only, not for skipping processing
+        # Always process the video to ensure fresh, accurate results
+        # Checkpoints will be used automatically if processing fails and needs to resume
         if analysis_id:
             try:
                 from app.services.checkpoint_manager import CheckpointManager
                 checkpoint_manager = CheckpointManager(analysis_id=analysis_id)
                 completed_steps = checkpoint_manager.get_completed_steps()
-                logger.info(f"📂 Checkpoint status: {completed_steps}")
+                logger.info(f"📂 Checkpoint status: {completed_steps} (checkpoints will be used for resume only, not skipping)")
                 
-                # If Step 3 is complete, we can skip to report generation
+                # Log checkpoint status but DO NOT skip processing
+                # Checkpoints are saved during processing and can be used if we need to resume
+                # But for a fresh analysis, we always want to process the video
                 if completed_steps.get('step_3_metrics_calculation', False):
-                    logger.info("✅ Found Step 3 checkpoint - loading metrics for report generation")
-                    step3_data = checkpoint_manager.load_step_3()
-                    if step3_data:
-                        return {
-                            "status": "completed",
-                            "analysis_type": "advanced_gait_analysis_v2_professional",
-                            "metrics": step3_data['metrics'],
-                            "keypoints_3d": step3_data['frames_3d_keypoints'][:10],
-                            "steps_completed": {
-                                "step_1_pose_estimation": True,
-                                "step_2_3d_lifting": True,
-                                "step_3_metrics_calculation": True,
-                                "step_4_report_generation": True
-                            },
-                            "from_checkpoint": True
-                        }
+                    logger.warning("⚠️ Step 3 checkpoint exists but will NOT be used - processing video fresh for accuracy")
             except Exception as e:
                 logger.warning(f"⚠️ Checkpoint check failed (non-critical): {e}")
         
@@ -833,15 +822,53 @@ class GaitAnalysisService:
         logger.info(f"🎯 FPS: {video_fps}, Reference length: {reference_length_mm}mm")
         logger.info("=" * 80)
         
+        # CRITICAL: Validate that we have data from Step 2 before proceeding
+        if not frames_3d_keypoints or len(frames_3d_keypoints) == 0:
+            error_msg = "CRITICAL: Step 3 cannot proceed - no 3D keypoints from Step 2! Step 2 may have failed."
+            logger.error(f"❌ {error_msg}")
+            raise GaitMetricsError(error_msg, details={
+                "frames_3d_keypoints_count": len(frames_3d_keypoints) if frames_3d_keypoints else 0,
+                "step_2_status": "FAILED - no data"
+            })
+        
+        # Validate that we have timestamps
+        if not frame_timestamps or len(frame_timestamps) == 0:
+            error_msg = "CRITICAL: Step 3 cannot proceed - no frame timestamps from Step 1!"
+            logger.error(f"❌ {error_msg}")
+            raise GaitMetricsError(error_msg, details={
+                "frame_timestamps_count": len(frame_timestamps) if frame_timestamps else 0,
+                "step_1_status": "FAILED - no timestamps"
+            })
+        
+        # Validate that timestamps match 3D keypoints
+        if len(frame_timestamps) != len(frames_3d_keypoints):
+            logger.warning(f"⚠️ Timestamp count ({len(frame_timestamps)}) doesn't match 3D keypoint count ({len(frames_3d_keypoints)})")
+            # Use the minimum length to avoid index errors
+            min_length = min(len(frame_timestamps), len(frames_3d_keypoints))
+            frame_timestamps = frame_timestamps[:min_length]
+            frames_3d_keypoints = frames_3d_keypoints[:min_length]
+            logger.warning(f"⚠️ Truncated to {min_length} frames to match counts")
+        
+        logger.info(f"✅ Step 3 validation passed: {len(frames_3d_keypoints)} 3D keypoint frames, {len(frame_timestamps)} timestamps")
+        logger.info(f"✅ Starting actual metrics calculation with {len(frames_3d_keypoints)} frames...")
+        
         if progress_callback:
             try:
-                progress_callback(72, "Starting gait metrics calculation...")
+                progress_callback(72, f"Starting gait metrics calculation with {len(frames_3d_keypoints)} frames...")
                 progress_callback(75, "Calculating gait parameters...")
             except Exception as e:
                 logger.warning(f"Error in progress callback during metrics calculation: {e}")
         
         metrics = {}
         try:
+            # CRITICAL: Actually call the metrics calculation function
+            logger.info(f"🔍 Calling _calculate_gait_metrics with {len(frames_3d_keypoints)} frames...")
+            logger.info(f"🔍 Input validation: frames_3d_keypoints type={type(frames_3d_keypoints)}, length={len(frames_3d_keypoints)}")
+            logger.info(f"🔍 Input validation: frame_timestamps type={type(frame_timestamps)}, length={len(frame_timestamps)}")
+            logger.info(f"🔍 Input validation: fps={video_fps}, reference_length_mm={reference_length_mm}")
+            
+            import time
+            start_time = time.time()
             metrics = self._calculate_gait_metrics(
                 frames_3d_keypoints,
                 frame_timestamps,
@@ -849,7 +876,18 @@ class GaitAnalysisService:
                 reference_length_mm,
                 progress_callback
             )
-            logger.info(f"✅ Gait metrics calculated: {len(metrics)} metrics")
+            calculation_time = time.time() - start_time
+            logger.info(f"✅ Gait metrics calculated in {calculation_time:.2f}s: {len(metrics)} metrics")
+            logger.info(f"✅ Metrics keys: {list(metrics.keys())[:10]}..." if len(metrics) > 10 else f"✅ Metrics keys: {list(metrics.keys())}")
+            
+            # CRITICAL: Validate that metrics were actually calculated
+            if not metrics:
+                error_msg = "CRITICAL: _calculate_gait_metrics returned empty metrics! Calculation may have failed silently."
+                logger.error(f"❌ {error_msg}")
+                raise GaitMetricsError(error_msg, details={
+                    "input_frames": len(frames_3d_keypoints),
+                    "calculation_time": calculation_time
+                })
             
             # CRITICAL: Validate metrics are not empty or fallback
             if not metrics or metrics.get('fallback_metrics', False):
@@ -895,10 +933,38 @@ class GaitAnalysisService:
         logger.info(f"🎯 Preparing final analysis report...")
         logger.info("=" * 80)
         
+        # CRITICAL: Validate that we have metrics from Step 3 before proceeding
+        if not metrics or len(metrics) == 0:
+            error_msg = "CRITICAL: Step 4 cannot proceed - no metrics from Step 3! Step 3 may have failed."
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Validate that metrics are not fallback
+        if metrics.get('fallback_metrics', False):
+            error_msg = "CRITICAL: Step 4 cannot proceed - Step 3 returned fallback metrics! Processing may have failed."
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        # Validate that we have core metrics
+        has_core_metrics = (
+            metrics.get('cadence') is not None or
+            metrics.get('walking_speed') is not None or
+            metrics.get('step_length') is not None
+        )
+        if not has_core_metrics:
+            error_msg = "CRITICAL: Step 4 cannot proceed - Step 3 metrics missing core values (cadence, walking_speed, step_length)!"
+            logger.error(f"❌ {error_msg}")
+            logger.error(f"❌ Available metrics keys: {list(metrics.keys())}")
+            raise ValueError(error_msg)
+        
+        logger.info(f"✅ Step 4 validation passed: {len(metrics)} metrics, core metrics present: {has_core_metrics}")
+        logger.info(f"✅ Sample metrics: cadence={metrics.get('cadence', 'N/A')}, step_length={metrics.get('step_length', 'N/A')}, walking_speed={metrics.get('walking_speed', 'N/A')}")
+        logger.info(f"✅ Starting actual report generation with validated metrics...")
+        
         if progress_callback:
             try:
-                progress_callback(90, "Starting report generation...")
-                progress_callback(92, "Validating all processing steps...")
+                progress_callback(90, f"Validating {len(metrics)} metrics from Step 3...")
+                progress_callback(92, "All processing steps validated...")
                 progress_callback(94, "Preparing analysis report...")
                 progress_callback(96, "Finalizing results...")
             except Exception as e:
