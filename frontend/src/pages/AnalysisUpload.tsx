@@ -473,8 +473,13 @@ export default function AnalysisUpload() {
           
           console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
           
-          if (mappedStep === 'report_generation' && backendProgress >= 95) {
-            schedulePoll(1000)
+          // For Step 4, poll more frequently to show detailed progress
+          if (mappedStep === 'report_generation') {
+            if (backendProgress >= 98) {
+              schedulePoll(500) // Poll every 500ms when finalizing (98-100%)
+            } else {
+              schedulePoll(1000) // Poll every 1s during Step 4 (95-98%)
+            }
           } else {
             schedulePoll(2000)
           }
@@ -948,9 +953,29 @@ export default function AnalysisUpload() {
           </div>
         )}
         
-        {status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98 && (
-          <div className="info-message">
-            <p>💾 Finalizing analysis and saving results to database... This will take just a moment.</p>
+        {status === 'processing' && currentStep === 'report_generation' && (
+          <div className="info-message" style={{ 
+            marginTop: '1rem', 
+            padding: '1rem', 
+            backgroundColor: '#f0f8ff', 
+            border: '1px solid #4a90e2', 
+            borderRadius: '8px' 
+          }}>
+            <p style={{ margin: 0, fontWeight: '500' }}>
+              {stepProgress < 95 && '🔄 Step 4: Starting report generation...'}
+              {stepProgress >= 95 && stepProgress < 98 && '📊 Step 4: Validating metrics and preparing report...'}
+              {stepProgress >= 98 && stepProgress < 100 && (
+                stepMessage.includes('Retrying') 
+                  ? `🔄 ${stepMessage}` 
+                  : '💾 Step 4: Saving analysis results to database... This will take just a moment.'
+              )}
+              {stepProgress === 100 && '✅ Step 4: Report generation complete!'}
+            </p>
+            {stepProgress >= 98 && stepProgress < 100 && (
+              <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9em', color: '#666' }}>
+                {stepMessage || 'Finalizing analysis and saving results to database...'}
+              </p>
+            )}
           </div>
         )}
 

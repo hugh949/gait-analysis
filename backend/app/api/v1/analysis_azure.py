@@ -2052,6 +2052,23 @@ async def process_analysis_azure(
         )
         
         # STEP 4: Update progress: Report generation - with retry logic
+        step4_start_time = time.time()
+        logger.info("=" * 80)
+        logger.info(f"[{request_id}] 🎯 [STEP 4] ========== REPORT GENERATION PHASE STARTING ==========")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Timestamp: {datetime.utcnow().isoformat()}")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Analysis ID: {analysis_id}")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Metrics received from Step 3: {len(metrics) if metrics else 0} metrics")
+        if metrics:
+            logger.info(f"[{request_id}] 🎯 [STEP 4] Key metrics preview: cadence={metrics.get('cadence')}, speed={metrics.get('walking_speed')}, step_length={metrics.get('step_length')}")
+        logger.info("=" * 80)
+        
+        # Update progress callback with detailed message
+        if progress_callback:
+            try:
+                progress_callback(95, "Step 4: Starting report generation - validating metrics from previous steps...")
+            except Exception as e:
+                logger.warning(f"[{request_id}] Error in progress callback: {e}")
+        
         logger.info(f"[{request_id}] 🔍 [STEP 4] Updating progress to 'report_generation' (95%)...")
         max_db_retries = 5
         progress_update_success = False
@@ -2061,7 +2078,7 @@ async def process_analysis_azure(
                 update_result = await db_service.update_analysis(analysis_id, {
                     'current_step': 'report_generation',
                     'step_progress': 95,
-                    'step_message': 'Generating analysis report...'
+                    'step_message': 'Step 4: Validating metrics and preparing report...'
                 })
                 logger.info(f"[{request_id}] ✅ [STEP 4] Progress update result: {update_result}")
                 progress_update_success = True
@@ -2170,14 +2187,28 @@ async def process_analysis_azure(
             raise GaitMetricsError(error_msg, details={"analysis_id": analysis_id, "available_metrics": list(metrics.keys())})
         
         # CRITICAL: Update progress to show we're saving results
+        logger.info("=" * 80)
+        logger.info(f"[{request_id}] 🎯 [STEP 4] ========== DATABASE SAVE PHASE STARTING ==========")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Preparing to save {len(metrics) if metrics else 0} metrics to database")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
+        logger.info("=" * 80)
+        
+        # Update progress callback
+        if progress_callback:
+            try:
+                progress_callback(98, "Step 4: Saving analysis results to database...")
+            except Exception as e:
+                logger.warning(f"[{request_id}] Error in progress callback: {e}")
+        
         try:
             await db_service.update_analysis(analysis_id, {
                 'current_step': 'report_generation',
                 'step_progress': 98,
-                'step_message': 'Saving analysis results to database...'
+                'step_message': 'Step 4: Saving analysis results to database...'
             })
+            logger.info(f"[{request_id}] ✅ [STEP 4] Progress updated to 98% - 'Saving analysis results to database...'")
         except Exception as e:
-            logger.warning(f"[{request_id}] Failed to update progress before final save: {e}")
+            logger.warning(f"[{request_id}] ⚠️ [STEP 4] Failed to update progress before final save: {e}")
         
         # Small delay to ensure previous update is visible
         await asyncio.sleep(0.3)  # Reduced delay
@@ -2188,6 +2219,13 @@ async def process_analysis_azure(
         completion_start_time = time.time()
         max_completion_time = 30.0  # Maximum 30 seconds for completion attempts
         
+        logger.info("=" * 80)
+        logger.info(f"[{request_id}] 🎯 [STEP 4] ========== FINAL COMPLETION UPDATE PHASE ==========")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Starting completion update with {max_db_retries} max retries")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Max completion time: {max_completion_time}s")
+        logger.info(f"[{request_id}] 🎯 [STEP 4] Metrics to save: {len(metrics) if metrics else 0} metrics")
+        logger.info("=" * 80)
+        
         for retry in range(max_db_retries):
             # Check timeout - don't retry forever
             elapsed_time = time.time() - completion_start_time
@@ -2197,19 +2235,53 @@ async def process_analysis_azure(
                 
             # Log progress during retries and update UI
             if retry > 0:
-                logger.info(f"[{request_id}] Completion attempt {retry + 1}/{max_db_retries} (elapsed: {elapsed_time:.1f}s)")
+                logger.info("=" * 80)
+                logger.info(f"[{request_id}] 🔄 [STEP 4] Completion attempt {retry + 1}/{max_db_retries} (elapsed: {elapsed_time:.1f}s)")
+                logger.info(f"[{request_id}] 🔄 [STEP 4] Previous attempt failed: {last_error}")
+                logger.info("=" * 80)
+                
+                # Update progress callback
+                if progress_callback:
+                    try:
+                        progress_callback(99, f"Step 4: Retrying database save... (attempt {retry + 1}/{max_db_retries})")
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Error in progress callback: {e}")
+                
                 # Update progress to show we're retrying
                 try:
                     await db_service.update_analysis(analysis_id, {
                         'current_step': 'report_generation',
                         'step_progress': 99,
-                        'step_message': f'Saving results... (attempt {retry + 1}/{max_db_retries})'
+                        'step_message': f'Step 4: Retrying database save... (attempt {retry + 1}/{max_db_retries})'
                     })
-                except:
-                    pass  # Don't fail on progress update
+                    logger.info(f"[{request_id}] ✅ [STEP 4] Progress updated to show retry attempt")
+                except Exception as update_err:
+                    logger.warning(f"[{request_id}] ⚠️ [STEP 4] Failed to update progress for retry: {update_err}")
+            
+            # Log attempt start
+            attempt_start_time = time.time()
+            logger.info("=" * 80)
+            logger.info(f"[{request_id}] 🔍 [STEP 4] Starting completion update attempt {retry + 1}/{max_db_retries}...")
+            logger.info(f"[{request_id}] 🔍 [STEP 4] Elapsed time since Step 4 start: {time.time() - step4_start_time:.2f}s")
+            logger.info("=" * 80)
             
             try:
+                logger.info(f"[{request_id}] 🔍 [STEP 4] Attempt {retry + 1}: Calling db_service.update_analysis with completion data...")
+                logger.info(f"[{request_id}] 🔍 [STEP 4]   - status: 'completed'")
+                logger.info(f"[{request_id}] 🔍 [STEP 4]   - step_progress: 100")
+                logger.info(f"[{request_id}] 🔍 [STEP 4]   - metrics count: {len(metrics) if metrics else 0}")
+                logger.info(f"[{request_id}] 🔍 [STEP 4]   - steps_completed: all 4 steps marked True")
+                
+                # Update progress callback
+                if progress_callback and retry == 0:
+                    try:
+                        progress_callback(99, "Step 4: Saving final results to database...")
+                    except Exception as e:
+                        logger.warning(f"[{request_id}] Error in progress callback: {e}")
+                
                 # Try async update first
+                update_start = time.time()
+                logger.info(f"[{request_id}] 🔍 [STEP 4] Calling db_service.update_analysis() at {datetime.utcnow().isoformat()}...")
                 update_result = await db_service.update_analysis(analysis_id, {
                     'status': 'completed',
                     'current_step': 'report_generation',
@@ -2223,6 +2295,8 @@ async def process_analysis_azure(
                         'step_4_report_generation': True
                     }
                 })
+                update_duration = time.time() - update_start
+                logger.info(f"[{request_id}] ✅ [STEP 4] Update call completed in {update_duration:.3f}s, result: {update_result}")
                 
                 if not update_result:
                     # Update returned False - try sync method as fallback
@@ -2247,15 +2321,26 @@ async def process_analysis_azure(
                         raise Exception("Update returned False and sync method not available")
                 
                 # CRITICAL: Verify the update was successful by reading it back
+                logger.info(f"[{request_id}] 🔍 [STEP 4] Waiting 0.1s before verification read...")
                 await asyncio.sleep(0.1)  # Reduced delay for faster completion (was 0.3)
-                verification = await db_service.get_analysis(analysis_id)
                 
+                logger.info(f"[{request_id}] 🔍 [STEP 4] Reading back analysis from database for verification...")
+                verification_start = time.time()
+                verification = await db_service.get_analysis(analysis_id)
+                verification_duration = time.time() - verification_start
+                logger.info(f"[{request_id}] ✅ [STEP 4] Verification read completed in {verification_duration:.3f}s")
+                
+                logger.info("=" * 80)
                 logger.info(f"[{request_id}] 🔍 [STEP 4] Verification check (attempt {retry + 1}):")
                 logger.info(f"[{request_id}] 🔍   - verification is None: {verification is None}")
                 if verification:
                     logger.info(f"[{request_id}] 🔍   - verification status: {verification.get('status')}")
                     logger.info(f"[{request_id}] 🔍   - verification has metrics: {bool(verification.get('metrics'))}")
                     logger.info(f"[{request_id}] 🔍   - verification metrics count: {len(verification.get('metrics', {}))}")
+                    logger.info(f"[{request_id}] 🔍   - verification steps_completed: {verification.get('steps_completed', {})}")
+                else:
+                    logger.warning(f"[{request_id}] ⚠️ [STEP 4] Verification returned None - analysis not found in database!")
+                logger.info("=" * 80)
                 
                 if verification and verification.get('status') == 'completed':
                     if verification.get('metrics'):
@@ -2283,6 +2368,12 @@ async def process_analysis_azure(
                     logger.warning(f"[{request_id}] ⚠️   - Status: {verification.get('status') if verification else 'None'}")
                     logger.warning(f"[{request_id}] ⚠️   - Has metrics: {bool(verification.get('metrics') if verification else False)}")
                 if completion_success:
+                    step4_total_time = time.time() - step4_start_time
+                    logger.info("=" * 80)
+                    logger.info(f"[{request_id}] ✅✅✅ [STEP 4] ========== REPORT GENERATION COMPLETE ==========")
+                    logger.info(f"[{request_id}] ✅ [STEP 4] Total Step 4 duration: {step4_total_time:.2f}s")
+                    logger.info(f"[{request_id}] ✅ [STEP 4] Completion attempt: {retry + 1}/{max_db_retries}")
+                    logger.info(f"[{request_id}] ✅ [STEP 4] Analysis ID: {analysis_id}")
                     logger.info(
                         f"[{request_id}] Analysis completed successfully",
                         extra={
@@ -2290,7 +2381,8 @@ async def process_analysis_azure(
                             "patient_id": patient_id,
                             "metrics_count": len(metrics),
                             "has_symmetry": "step_time_symmetry" in metrics or "step_length_symmetry" in metrics,
-                            "fallback_metrics": metrics.get('fallback_metrics', False)
+                            "fallback_metrics": metrics.get('fallback_metrics', False),
+                            "step4_duration_seconds": step4_total_time
                         }
                     )
                     
@@ -2304,10 +2396,26 @@ async def process_analysis_azure(
                             "step_length": metrics.get('step_length')
                         }
                     )
+                    logger.info("=" * 80)
+                    
+                    # Update progress callback for final success
+                    if progress_callback:
+                        try:
+                            progress_callback(100, "Step 4: Report generation complete! Analysis ready to view.")
+                        except Exception as e:
+                            logger.warning(f"[{request_id}] Error in final progress callback: {e}")
+                    
                     break  # Success - exit retry loop
                     
             except Exception as e:
+                attempt_duration = time.time() - attempt_start_time
                 last_error = e
+                logger.error("=" * 80)
+                logger.error(f"[{request_id}] ❌ [STEP 4] Completion attempt {retry + 1} FAILED after {attempt_duration:.3f}s")
+                logger.error(f"[{request_id}] ❌ [STEP 4] Error type: {type(e).__name__}")
+                logger.error(f"[{request_id}] ❌ [STEP 4] Error message: {str(e)}")
+                logger.error("=" * 80)
+                
                 if retry < max_db_retries - 1:
                     # Progressive backoff: 0.3s, 0.6s, 0.9s, 1.2s, etc. but cap at 2s
                     delay = min(0.3 * (retry + 1), 2.0)
@@ -2407,7 +2515,14 @@ async def process_analysis_azure(
         # CRITICAL: If all retries failed, automatically try force-complete as last resort
         # Use in-memory metrics (from analysis_result) since database update may have failed
         if not completion_success:
-            logger.warning(f"[{request_id}] All completion attempts failed - trying automatic force-complete as last resort")
+            step4_elapsed = time.time() - step4_start_time
+            logger.error("=" * 80)
+            logger.error(f"[{request_id}] ❌❌❌ [STEP 4] ALL COMPLETION ATTEMPTS FAILED ❌❌❌")
+            logger.error(f"[{request_id}] ❌ [STEP 4] Total Step 4 duration: {step4_elapsed:.2f}s")
+            logger.error(f"[{request_id}] ❌ [STEP 4] Attempted {max_db_retries} retries")
+            logger.error(f"[{request_id}] ❌ [STEP 4] Last error: {last_error}")
+            logger.error(f"[{request_id}] ❌ [STEP 4] Trying automatic force-complete as last resort...")
+            logger.error("=" * 80)
             try:
                 # CRITICAL: Use metrics from analysis_result (in memory) since database may not have them
                 # This ensures we can recover even if the database update failed
