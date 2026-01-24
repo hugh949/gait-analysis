@@ -1654,17 +1654,56 @@ async def process_analysis_azure(
                     }
                 )
             
-            # Validate that metrics exist and are not fallback
+            # CRITICAL: Validate that metrics exist and are not fallback
+            # This is the PRIMARY source of metrics - use it directly, don't re-extract
             metrics = analysis_result.get('metrics', {})
-            if not metrics or metrics.get('fallback_metrics', False):
-                error_msg = "Video processing completed but metrics are missing or fallback"
+            
+            logger.info(
+                f"[{request_id}] 🔍 Metrics validation: has_metrics={bool(metrics)}, count={len(metrics) if metrics else 0}, is_fallback={metrics.get('fallback_metrics', False) if metrics else None}"
+            )
+            
+            if not metrics or len(metrics) == 0:
+                error_msg = "CRITICAL: Video processing completed but metrics are missing!"
                 logger.error(f"[{request_id}] ❌ {error_msg}")
+                logger.error(f"[{request_id}] Analysis result keys: {list(analysis_result.keys())}")
                 raise VideoProcessingError(
                     error_msg,
                     details={
                         "analysis_id": analysis_id,
-                        "has_metrics": bool(metrics),
-                        "fallback_metrics": metrics.get('fallback_metrics', False) if metrics else None
+                        "has_metrics": False,
+                        "analysis_result_keys": list(analysis_result.keys())
+                    }
+                )
+            
+            if metrics.get('fallback_metrics', False):
+                error_msg = "CRITICAL: Video processing returned fallback metrics - Step 3 likely failed!"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                logger.error(f"[{request_id}] Metrics keys: {list(metrics.keys())}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={
+                        "analysis_id": analysis_id,
+                        "has_metrics": True,
+                        "fallback_metrics": True,
+                        "metrics_keys": list(metrics.keys())
+                    }
+                )
+            
+            # Validate core metrics exist
+            has_core_metrics = (
+                metrics.get('cadence') is not None or
+                metrics.get('walking_speed') is not None or
+                metrics.get('step_length') is not None
+            )
+            if not has_core_metrics:
+                error_msg = "CRITICAL: Metrics missing core values (cadence, walking_speed, step_length)!"
+                logger.error(f"[{request_id}] ❌ {error_msg}")
+                logger.error(f"[{request_id}] Available metrics: {list(metrics.keys())}")
+                raise VideoProcessingError(
+                    error_msg,
+                    details={
+                        "analysis_id": analysis_id,
+                        "metrics_keys": list(metrics.keys())
                     }
                 )
             
@@ -1675,7 +1714,8 @@ async def process_analysis_azure(
                     "frames_processed": frames_processed,
                     "total_frames": total_frames,
                     "metrics_count": len(metrics),
-                    "has_symmetry": "step_time_symmetry" in metrics or "step_length_symmetry" in metrics
+                    "has_symmetry": "step_time_symmetry" in metrics or "step_length_symmetry" in metrics,
+                    "has_core_metrics": has_core_metrics
                 }
             )
         except PoseEstimationError as e:
@@ -1712,111 +1752,19 @@ async def process_analysis_azure(
                 details={"analysis_id": analysis_id, "error_type": type(e).__name__, "error": str(e)}
             )
         
-        # STEP 3-4: Extract and format metrics with validation and fallback
-        # CRITICAL: Ensure we always have metrics, even if extraction fails
-        metrics = {}
-        try:
-            if not analysis_result:
-                raise ValueError("Analysis result is None")
-            
-            raw_metrics = analysis_result.get('metrics', {})
-            
-            if not raw_metrics:
-                logger.warning(
-                    f"[{request_id}] Analysis result has no metrics, using fallback",
-                    extra={"analysis_id": analysis_id, "analysis_result_keys": list(analysis_result.keys()) if analysis_result else []}
-                )
-                # Use fallback metrics instead of failing
-                raw_metrics = {
-                    'cadence': 0.0,
-                    'step_length': 0.0,
-                    'walking_speed': 0.0,
-                    'stride_length': 0.0,
-                    'double_support_time': 0.0,
-                    'swing_time': 0.0,
-                    'stance_time': 0.0,
-                    'fallback_metrics': True
-                }
-            
-            # Map to expected metric names with type validation
-            def safe_get_metric(key: str, default: float = 0.0) -> float:
-                """Safely extract metric value with type checking"""
-                value = raw_metrics.get(key, default)
-                try:
-                    return float(value) if value is not None else default
-                except (ValueError, TypeError):
-                    logger.warning(
-                        f"[{request_id}] Invalid metric value for {key}: {value}",
-                        extra={"analysis_id": analysis_id, "metric_key": key, "value": value}
-                    )
-                    return default
-            
-            metrics = {
-                'cadence': safe_get_metric('cadence', 0.0),
-                'step_length': safe_get_metric('step_length', 0.0),  # in mm
-                'walking_speed': safe_get_metric('walking_speed', 0.0),  # in mm/s
-                'stride_length': safe_get_metric('stride_length', 0.0),  # in mm
-                'double_support_time': safe_get_metric('double_support_time', 0.0),  # in seconds
-                'swing_time': safe_get_metric('swing_time', 0.0),  # in seconds
-                'stance_time': safe_get_metric('stance_time', 0.0),  # in seconds
+        # CRITICAL: Metrics are already validated above - use them directly
+        # DO NOT re-extract or create fallback - metrics from analyze_video are the source of truth
+        # The metrics variable is already set from analysis_result.get('metrics', {}) above
+        # and has been validated to exist, not be fallback, and have core values
+        
+        logger.info(
+            f"[{request_id}] ✅ Using metrics directly from analysis_result (already validated)",
+            extra={
+                "analysis_id": analysis_id,
+                "metric_count": len(metrics),
+                "has_core_metrics": bool(metrics.get('cadence') or metrics.get('walking_speed') or metrics.get('step_length'))
             }
-            
-            # Add professional metrics if available
-            if 'step_time_symmetry' in raw_metrics:
-                metrics['step_time_symmetry'] = safe_get_metric('step_time_symmetry', 0.0)
-            if 'step_length_symmetry' in raw_metrics:
-                metrics['step_length_symmetry'] = safe_get_metric('step_length_symmetry', 0.0)
-            if 'step_length_cv' in raw_metrics:
-                metrics['step_length_cv'] = safe_get_metric('step_length_cv', 0.0)
-            if 'step_time_cv' in raw_metrics:
-                metrics['step_time_cv'] = safe_get_metric('step_time_cv', 0.0)
-            if 'step_time' in raw_metrics:
-                metrics['step_time'] = safe_get_metric('step_time', 0.0)
-            
-            # Add geriatric-specific parameters
-            if 'step_width_mean' in raw_metrics:
-                metrics['step_width_mean'] = safe_get_metric('step_width_mean', 0.0)
-            if 'step_width_cv' in raw_metrics:
-                metrics['step_width_cv'] = safe_get_metric('step_width_cv', 0.0)
-            if 'walk_ratio' in raw_metrics:
-                metrics['walk_ratio'] = safe_get_metric('walk_ratio', 0.0)
-            if 'stride_speed_cv' in raw_metrics:
-                metrics['stride_speed_cv'] = safe_get_metric('stride_speed_cv', 0.0)
-            
-            # Add professional assessments
-            if 'fall_risk_assessment' in raw_metrics:
-                metrics['fall_risk_assessment'] = raw_metrics.get('fall_risk_assessment', {})
-            if 'functional_mobility' in raw_metrics:
-                metrics['functional_mobility'] = raw_metrics.get('functional_mobility', {})
-            if 'directional_analysis' in raw_metrics:
-                metrics['directional_analysis'] = raw_metrics.get('directional_analysis', {})
-            
-            if 'biomechanical_validation' in raw_metrics:
-                metrics['biomechanical_validation'] = raw_metrics.get('biomechanical_validation', {})
-            
-            logger.info(
-                f"[{request_id}] Metrics extracted and validated",
-                extra={"analysis_id": analysis_id, "metric_count": len(metrics)}
-            )
-        except Exception as e:
-            logger.error(
-                f"[{request_id}] Error extracting metrics: {e}",
-                extra={"analysis_id": analysis_id, "error_type": type(e).__name__},
-                exc_info=True
-            )
-            # CRITICAL: Don't fail - use fallback metrics
-            logger.warning(f"[{request_id}] Using fallback metrics due to extraction error")
-            metrics = {
-                'cadence': 0.0,
-                'step_length': 0.0,
-                'walking_speed': 0.0,
-                'stride_length': 0.0,
-                'double_support_time': 0.0,
-                'swing_time': 0.0,
-                'stance_time': 0.0,
-                'fallback_metrics': True,
-                'error': f"Metrics extraction failed: {str(e)}"
-            }
+        )
         
         # STEP 4: Update progress: Report generation - with retry logic
         max_db_retries = 5
