@@ -761,24 +761,24 @@ async def upload_video(
                 
                 # CRITICAL: Verify analysis is still visible before scheduling background task
                 if db_service and db_service._use_mock:
-                analysis_still_visible = analysis_id in db_service._mock_storage
-                logger.error(f"[{request_id}] 🔍 Analysis still visible in memory before background task: {analysis_still_visible}")
-                if not analysis_still_visible:
-                    logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis disappeared from memory! Recreating...")
-                    try:
-                        await db_service.create_analysis({
-                            'id': analysis_id,
-                            'patient_id': patient_id,
-                            'filename': file.filename,
-                            'video_url': video_url,
-                            'status': 'processing',
-                            'current_step': 'pose_estimation',
-                            'step_progress': 0,
-                            'step_message': 'Upload complete. Starting analysis...'
-                        })
-                        logger.error(f"[{request_id}] ✅ Recreated analysis in memory")
-                    except Exception as recreate_error:
-                        logger.error(f"[{request_id}] ❌ Failed to recreate analysis: {recreate_error}", exc_info=True)
+                    analysis_still_visible = analysis_id in db_service._mock_storage
+                    logger.error(f"[{request_id}] 🔍 Analysis still visible in memory before background task: {analysis_still_visible}")
+                    if not analysis_still_visible:
+                        logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis disappeared from memory! Recreating...")
+                        try:
+                            await db_service.create_analysis({
+                                'id': analysis_id,
+                                'patient_id': patient_id,
+                                'filename': file.filename,
+                                'video_url': video_url,
+                                'status': 'processing',
+                                'current_step': 'pose_estimation',
+                                'step_progress': 0,
+                                'step_message': 'Upload complete. Starting analysis...'
+                            })
+                            logger.error(f"[{request_id}] ✅ Recreated analysis in memory")
+                        except Exception as recreate_error:
+                            logger.error(f"[{request_id}] ❌ Failed to recreate analysis: {recreate_error}", exc_info=True)
                 
                 if background_tasks is None:
                     # Fallback: use asyncio.create_task if BackgroundTasks not available
@@ -797,30 +797,30 @@ async def upload_video(
                 
                 # CRITICAL: Final verification - ensure analysis is visible before returning
                 if db_service and db_service._use_mock:
-                final_check = analysis_id in db_service._mock_storage
-                logger.error(f"[{request_id}] 🔍🔍🔍 FINAL VERIFICATION BEFORE RETURN 🔍🔍🔍")
-                logger.error(f"[{request_id}] 🔍 Analysis in memory: {final_check}")
-                logger.error(f"[{request_id}] 🔍 In-memory storage size: {len(db_service._mock_storage)}")
-                logger.error(f"[{request_id}] 🔍 In-memory analysis IDs: {list(db_service._mock_storage.keys())}")
-                if final_check:
-                    logger.error(f"[{request_id}] ✅✅✅ FINAL CHECK PASSED - Analysis is visible ✅✅✅")
-                else:
-                    logger.error(f"[{request_id}] ❌❌❌ FINAL CHECK FAILED - Analysis NOT visible ❌❌❌")
-                    # Last resort - recreate it
-                    try:
-                        await db_service.create_analysis({
-                            'id': analysis_id,
-                            'patient_id': patient_id,
-                            'filename': file.filename,
-                            'video_url': video_url,
-                            'status': 'processing',
-                            'current_step': 'pose_estimation',
-                            'step_progress': 0,
-                            'step_message': 'Upload complete. Starting analysis...'
-                        })
-                        logger.error(f"[{request_id}] ✅ Last resort: Recreated analysis")
-                    except Exception as last_resort_error:
-                        logger.error(f"[{request_id}] ❌ Last resort recreation failed: {last_resort_error}", exc_info=True)
+                    final_check = analysis_id in db_service._mock_storage
+                    logger.error(f"[{request_id}] 🔍🔍🔍 FINAL VERIFICATION BEFORE RETURN 🔍🔍🔍")
+                    logger.error(f"[{request_id}] 🔍 Analysis in memory: {final_check}")
+                    logger.error(f"[{request_id}] 🔍 In-memory storage size: {len(db_service._mock_storage)}")
+                    logger.error(f"[{request_id}] 🔍 In-memory analysis IDs: {list(db_service._mock_storage.keys())}")
+                    if final_check:
+                        logger.error(f"[{request_id}] ✅✅✅ FINAL CHECK PASSED - Analysis is visible ✅✅✅")
+                    else:
+                        logger.error(f"[{request_id}] ❌❌❌ FINAL CHECK FAILED - Analysis NOT visible ❌❌❌")
+                        # Last resort - recreate it
+                        try:
+                            await db_service.create_analysis({
+                                'id': analysis_id,
+                                'patient_id': patient_id,
+                                'filename': file.filename,
+                                'video_url': video_url,
+                                'status': 'processing',
+                                'current_step': 'pose_estimation',
+                                'step_progress': 0,
+                                'step_message': 'Upload complete. Starting analysis...'
+                            })
+                            logger.error(f"[{request_id}] ✅ Last resort: Recreated analysis")
+                        except Exception as last_resort_error:
+                            logger.error(f"[{request_id}] ❌ Last resort recreation failed: {last_resort_error}", exc_info=True)
             except Exception as e:
                 logger.error(f"[{request_id}] Error scheduling background task: {e}", exc_info=True)
                 # Update analysis status to failed
