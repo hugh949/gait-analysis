@@ -54,29 +54,19 @@ COPY requirements.txt .
 # This is the slowest step, but cached when only code changes
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Verify critical dependencies are installed (fail build if missing)
-# This ensures fastapi, uvicorn, and other core dependencies are available
-# Using separate RUN commands with explicit error handling
-RUN python -c "import fastapi; print('✓ FastAPI', fastapi.__version__)" || (echo "❌ CRITICAL: FastAPI not installed!" && exit 1)
-RUN python -c "import uvicorn; print('✓ Uvicorn', uvicorn.__version__)" || (echo "❌ CRITICAL: Uvicorn not installed!" && exit 1)
-RUN python -c "import pydantic; print('✓ Pydantic', pydantic.__version__)" || (echo "❌ CRITICAL: Pydantic not installed!" && exit 1)
-RUN python -c "import loguru; print('✓ Loguru', loguru.__version__)" || (echo "❌ CRITICAL: Loguru not installed!" && exit 1)
-RUN echo "✓ Core dependencies verified"
+# OPTIMIZATION: Combine verification into single RUN to reduce layers
+RUN python -c "import fastapi, uvicorn, pydantic, loguru; print('✓ Core dependencies verified')" || \
+    (echo "❌ CRITICAL: Core dependencies missing!" && exit 1)
 
 # Verify MediaPipe installation (non-blocking - app handles fallback gracefully)
 # MediaPipe may not expose 'solutions' immediately in some Docker environments
 # The application code already handles this case with fallback to dummy keypoints
 RUN python -c "import mediapipe as mp; print('✓ MediaPipe imported'); attrs = [a for a in dir(mp) if not a.startswith('_')]; print('Available:', attrs[:5]); print('Has solutions:', hasattr(mp, 'solutions'))" || echo "⚠️  MediaPipe verification incomplete - app will use fallback if needed"
 
-# Copy application code
-# Note: .dockerignore excludes old ML-based service files (perception_stack.py, etc.)
-# Only Azure-native services are included: azure_storage.py, azure_vision.py, database_azure_sql.py
+# OPTIMIZATION: Copy all code/config in one layer for better caching
+# Note: .dockerignore excludes old ML-based service files
 COPY app/ ./app/
-COPY main_integrated.py .
-
-# Copy web.config for Azure App Service request timeout configuration
-# This increases the request timeout from default 230s to 600s (10 minutes)
-COPY web.config ./web.config
+COPY main_integrated.py web.config ./
 
 # Copy frontend build (must be built and copied to backend/frontend-dist before Docker build)
 # Create directory first, then copy files individually to avoid ACR layer issues
