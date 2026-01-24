@@ -366,45 +366,62 @@ async def upload_video(
         
         # CRITICAL: Validate video quality BEFORE uploading to blob storage
         # This allows us to provide immediate feedback to user
+        # NOTE: Validation is optional - if it fails, we continue without it
         logger.info(f"[{request_id}] 🔍 Validating video quality for gait analysis...")
         quality_result = None
         if tmp_path and os.path.exists(tmp_path):
             try:
-                from app.services.video_quality_validator import VideoQualityValidator
-                
-                # Get gait analysis service (defined in this module)
-                gait_service = get_gait_analysis_service()
-                validator = VideoQualityValidator(
-                    pose_landmarker=gait_service.pose_landmarker if gait_service else None
-                )
-                
-                quality_result = validator.validate_video_for_gait_analysis(
-                    video_path=tmp_path,
-                    view_type=view_type.value if hasattr(view_type, 'value') else str(view_type),
-                    sample_frames=20
-                )
-                
-                logger.info(f"[{request_id}] 🔍 Video quality validation results:")
-                logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
-                logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
-                logger.info(f"[{request_id}] 🔍   - Pose detection rate: {quality_result.get('pose_detection_rate', 0)*100:.1f}%")
-                logger.info(f"[{request_id}] 🔍   - Critical joints detected: {quality_result.get('critical_joints_detected', False)}")
-                logger.info(f"[{request_id}] 🔍   - Issues found: {len(quality_result.get('issues', []))}")
-                
-                if quality_result.get('issues'):
-                    logger.warning(f"[{request_id}] ⚠️ Video quality issues detected:")
-                    for issue in quality_result.get('issues', []):
-                        logger.warning(f"[{request_id}] ⚠️   - {issue}")
-                
-                if not quality_result.get('is_valid', False):
-                    logger.error(f"[{request_id}] ❌❌❌ VIDEO QUALITY INSUFFICIENT FOR ACCURATE GAIT ANALYSIS ❌❌❌")
-                    logger.error(f"[{request_id}] Quality score: {quality_result.get('quality_score', 0):.1f}% (minimum: 60%)")
-                    logger.error(f"[{request_id}] Top recommendations:")
-                    for rec in quality_result.get('recommendations', [])[:3]:
-                        logger.error(f"[{request_id}]   - {rec}")
-            except Exception as validation_error:
-                logger.warning(f"[{request_id}] Video quality validation failed (non-critical): {validation_error}", exc_info=True)
-                logger.warning(f"[{request_id}] Processing will continue, but video quality is unknown")
+                # Import with error handling - if import fails, skip validation
+                try:
+                    from app.services.video_quality_validator import VideoQualityValidator
+                except ImportError as import_err:
+                    logger.warning(f"[{request_id}] ⚠️ VideoQualityValidator not available (import error: {import_err}) - skipping validation")
+                    quality_result = None
+                except Exception as import_err:
+                    logger.warning(f"[{request_id}] ⚠️ Error importing VideoQualityValidator: {import_err} - skipping validation")
+                    quality_result = None
+                else:
+                    # Import succeeded - try to use it
+                    try:
+                        # Get gait analysis service (defined in this module)
+                        gait_service = get_gait_analysis_service()
+                        validator = VideoQualityValidator(
+                            pose_landmarker=gait_service.pose_landmarker if gait_service else None
+                        )
+                        
+                        quality_result = validator.validate_video_for_gait_analysis(
+                            video_path=tmp_path,
+                            view_type=view_type.value if hasattr(view_type, 'value') else str(view_type),
+                            sample_frames=20
+                        )
+                        
+                        logger.info(f"[{request_id}] 🔍 Video quality validation results:")
+                        logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
+                        logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
+                        logger.info(f"[{request_id}] 🔍   - Pose detection rate: {quality_result.get('pose_detection_rate', 0)*100:.1f}%")
+                        logger.info(f"[{request_id}] 🔍   - Critical joints detected: {quality_result.get('critical_joints_detected', False)}")
+                        logger.info(f"[{request_id}] 🔍   - Issues found: {len(quality_result.get('issues', []))}")
+                        
+                        if quality_result.get('issues'):
+                            logger.warning(f"[{request_id}] ⚠️ Video quality issues detected:")
+                            for issue in quality_result.get('issues', []):
+                                logger.warning(f"[{request_id}] ⚠️   - {issue}")
+                        
+                        if not quality_result.get('is_valid', False):
+                            logger.error(f"[{request_id}] ❌❌❌ VIDEO QUALITY INSUFFICIENT FOR ACCURATE GAIT ANALYSIS ❌❌❌")
+                            logger.error(f"[{request_id}] Quality score: {quality_result.get('quality_score', 0):.1f}% (minimum: 60%)")
+                            logger.error(f"[{request_id}] Top recommendations:")
+                            for rec in quality_result.get('recommendations', [])[:3]:
+                                logger.error(f"[{request_id}]   - {rec}")
+                    except Exception as validation_error:
+                        logger.warning(f"[{request_id}] Video quality validation failed (non-critical): {validation_error}", exc_info=True)
+                        logger.warning(f"[{request_id}] Processing will continue, but video quality is unknown")
+                        quality_result = None
+            except Exception as outer_error:
+                # Catch any unexpected errors in the validation block
+                logger.warning(f"[{request_id}] Unexpected error during video quality validation: {outer_error}", exc_info=True)
+                logger.warning(f"[{request_id}] Processing will continue without quality validation")
+                quality_result = None
         else:
             logger.warning(f"[{request_id}] ⚠️ Cannot validate video quality - temp file not accessible")
         
