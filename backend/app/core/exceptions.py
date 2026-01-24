@@ -66,13 +66,20 @@ def gait_error_to_http(exception: GaitAnalysisError) -> HTTPException:
         "DATABASE_ERROR": status.HTTP_503_SERVICE_UNAVAILABLE,
     }
     
-    http_status = status_map.get(exception.error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    # Defensive: Safely get exception attributes with fallbacks
+    error_code = getattr(exception, 'error_code', 'UNKNOWN_ERROR')
+    error_message = getattr(exception, 'message', str(exception))
+    error_details = getattr(exception, 'details', {})
+    
+    http_status = status_map.get(error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Use string detail for HTTPException to ensure compatibility
+    # FastAPI can serialize dict, but string is safer and more reliable
+    detail_str = f"{error_code}: {error_message}"
+    if error_details:
+        detail_str += f" (Details: {error_details})"
     
     return HTTPException(
         status_code=http_status,
-        detail={
-            "error": exception.error_code,
-            "message": exception.message,
-            "details": exception.details
-        }
+        detail=detail_str
     )

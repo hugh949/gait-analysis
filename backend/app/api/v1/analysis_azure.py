@@ -285,7 +285,20 @@ async def upload_video(
                     chunk_count += 1
                     
                     # Write chunk immediately to reduce memory usage
-                    tmp_file.write(chunk)
+                    try:
+                        tmp_file.write(chunk)
+                    except (OSError, IOError) as write_error:
+                        tmp_file.close()
+                        if os.path.exists(tmp_path):
+                            try:
+                                os.unlink(tmp_path)
+                            except:
+                                pass
+                        logger.error(f"[{request_id}] Failed to write chunk to temp file: {write_error}", exc_info=True)
+                        raise StorageError(
+                            f"Failed to write uploaded file: {write_error}",
+                            details={"error": str(write_error), "chunk_count": chunk_count}
+                        )
                     
                     # Log progress more frequently for large files (every 5MB or every 5 seconds)
                     current_time = time.time()
@@ -304,7 +317,11 @@ async def upload_video(
                     # Check file size limit
                     if file_size > MAX_FILE_SIZE:
                         tmp_file.close()
-                        os.unlink(tmp_path)
+                        if os.path.exists(tmp_path):
+                            try:
+                                os.unlink(tmp_path)
+                            except:
+                                pass
                         logger.error(
                             f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
                             extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
@@ -320,6 +337,15 @@ async def upload_video(
                         )
                 
                 tmp_file.close()
+            except Exception as read_error:
+                # CRITICAL: Ensure file is closed even if error occurs
+                try:
+                    if tmp_file and not tmp_file.closed:
+                        tmp_file.close()
+                except:
+                    pass
+                # Re-raise to be handled by outer exception handler
+                raise
                 upload_duration = time.time() - upload_start_time
                 upload_rate = (file_size / upload_duration) / (1024 * 1024) if upload_duration > 0 else 0  # MB/s
                 
@@ -904,14 +930,42 @@ async def upload_video(
         raise
     except (ValidationError, VideoProcessingError, StorageError, DatabaseError) as e:
         # Convert custom exceptions to HTTP exceptions - let global handler process
-        logger.error(
-            f"[{request_id}] Upload failed: {e.error_code} - {e.message}",
-            extra={"error_code": e.error_code, "details": e.details},
-            exc_info=True
-        )
-        # Raise HTTPException so global handler can process it
-        http_exc = gait_error_to_http(e)
-        raise http_exc
+        try:
+            error_code = getattr(e, 'error_code', 'UNKNOWN_ERROR')
+            error_message = getattr(e, 'message', str(e))
+            error_details = getattr(e, 'details', {})
+            
+            logger.error(
+                f"[{request_id}] Upload failed: {error_code} - {error_message}",
+                extra={"error_code": error_code, "details": error_details},
+                exc_info=True
+            )
+            
+            # Safely convert to HTTPException with defensive error handling
+            try:
+                http_exc = gait_error_to_http(e)
+                raise http_exc
+            except Exception as http_conv_error:
+                # If conversion fails, raise a safe HTTPException
+                logger.error(
+                    f"[{request_id}] Failed to convert exception to HTTPException: {http_conv_error}",
+                    exc_info=True
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Upload failed: {error_code}: {error_message}"
+                )
+        except Exception as handler_error:
+            # Even the exception handler failed - this is critical
+            logger.critical(
+                f"[{request_id}] CRITICAL: Exception handler itself failed: {handler_error}",
+                exc_info=True
+            )
+            # Raise a safe HTTPException to prevent worker crash
+            raise HTTPException(
+                status_code=500,
+                detail=f"Upload failed: {type(e).__name__}: {str(e)}"
+            )
     except Exception as e:
         # Catch-all for unexpected errors - log and raise HTTPException
         error_type = type(e).__name__

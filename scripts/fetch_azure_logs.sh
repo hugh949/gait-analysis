@@ -3,7 +3,7 @@
 # This should be run BEFORE making any changes to understand current behavior
 
 APP_NAME="gaitanalysisapp"
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-gait-analysis-rg}"  # Default or from env
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-gait-analysis-rg-wus3}"  # Default or from env
 LOG_LINES="${LOG_LINES:-200}"  # Number of recent log lines to fetch
 
 echo "=========================================="

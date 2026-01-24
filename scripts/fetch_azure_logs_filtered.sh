@@ -8,7 +8,7 @@
 #   ./fetch_azure_logs_filtered.sh "upload"
 
 APP_NAME="gaitanalysisapp"
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-gait-analysis-rg}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-gait-analysis-rg-wus3}"
 LOG_LINES="${LOG_LINES:-500}"
 FILTER="${1:-}"
 
