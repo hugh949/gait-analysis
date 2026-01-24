@@ -519,10 +519,10 @@ async def upload_video(
                 
                 # Create analysis record - this will save to file and verify it's readable
                 creation_success = await db_service.create_analysis(analysis_data)
-            
-            logger.error(f"[{request_id}] create_analysis returned: {creation_success}")
-            
-            if not creation_success:
+                
+                logger.error(f"[{request_id}] create_analysis returned: {creation_success}")
+                
+                if not creation_success:
                 logger.error(f"[{request_id}] ❌❌❌ FAILED TO CREATE ANALYSIS RECORD ❌❌❌", extra={"analysis_id": analysis_id})
                 return JSONResponse(
                     status_code=500,
@@ -532,20 +532,20 @@ async def upload_video(
                         "details": {"analysis_id": analysis_id}
                     }
                 )
-            
-            logger.error(f"[{request_id}] ✅✅✅ ANALYSIS RECORD CREATED SUCCESSFULLY ✅✅✅")
-            logger.info(
-                f"[{request_id}] Created analysis record",
-                extra={"analysis_id": analysis_id, "patient_id": patient_id}
-            )
-            
-            # Quality validation already done above - results are in analysis_data
-            if quality_result:
-                logger.info(f"[{request_id}] ✅ Video quality validation completed and stored in analysis record")
-            
-            # CRITICAL: Verify the analysis is immediately readable in MEMORY before returning
-            # In-memory storage is the source of truth - check it first
-            if db_service and db_service._use_mock:
+                
+                logger.error(f"[{request_id}] ✅✅✅ ANALYSIS RECORD CREATED SUCCESSFULLY ✅✅✅")
+                logger.info(
+                    f"[{request_id}] Created analysis record",
+                    extra={"analysis_id": analysis_id, "patient_id": patient_id}
+                )
+                
+                # Quality validation already done above - results are in analysis_data
+                if quality_result:
+                    logger.info(f"[{request_id}] ✅ Video quality validation completed and stored in analysis record")
+                
+                # CRITICAL: Verify the analysis is immediately readable in MEMORY before returning
+                # In-memory storage is the source of truth - check it first
+                if db_service and db_service._use_mock:
                 import os
                 import threading
                 analysis_in_memory = analysis_id in db_service._mock_storage
@@ -649,9 +649,9 @@ async def upload_video(
                         }
                     }
                 )
-            
-            logger.error(f"[{request_id}] ========== ANALYSIS RECORD CREATION COMPLETE ==========")
-        except Exception as e:
+                
+                logger.error(f"[{request_id}] ========== ANALYSIS RECORD CREATION COMPLETE ==========")
+            except Exception as e:
             logger.error(f"[{request_id}] ❌❌❌ ERROR CREATING ANALYSIS RECORD ❌❌❌", exc_info=True)
             logger.error(f"[{request_id}] Error: {type(e).__name__}: {e}")
             if tmp_path and os.path.exists(tmp_path):
@@ -673,8 +673,8 @@ async def upload_video(
             try:
                 # view_type is now a string, not an enum
                 view_type_str = str(view_type)
-            
-            # CRITICAL: Start keep-alive heartbeat IMMEDIATELY after scheduling
+                
+                # CRITICAL: Start keep-alive heartbeat IMMEDIATELY after scheduling
             # This ensures the analysis stays alive even before processing starts
             # This is especially important in multi-worker environments
             # NOTE: This task runs independently and will continue even after request completes
