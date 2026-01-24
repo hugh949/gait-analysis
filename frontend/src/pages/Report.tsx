@@ -66,6 +66,12 @@ interface AnalysisResult {
     }
   }
   created_at?: string
+  // Video quality validation fields
+  video_quality_score?: number
+  video_quality_valid?: boolean
+  video_quality_issues?: string[]
+  video_quality_recommendations?: string[]
+  pose_detection_rate?: number
 }
 
 // Parameter definitions for professional reports
@@ -871,6 +877,80 @@ export default function Report() {
             </section>
           )}
 
+          {/* Video Quality Assessment Section */}
+          {(analysis.video_quality_score !== undefined || analysis.video_quality_issues || analysis.video_quality_recommendations) && (
+            <section className="report-section video-quality-section">
+              <div className="section-header">
+                <Activity className="section-icon" size={24} />
+                <h2>Video Quality Assessment</h2>
+              </div>
+              <div className="video-quality-content">
+                {analysis.video_quality_score !== undefined && (
+                  <div className={`quality-score-card ${analysis.video_quality_valid ? 'quality-good' : analysis.video_quality_score >= 60 ? 'quality-moderate' : 'quality-poor'}`}>
+                    <div className="quality-score-header">
+                      <span>Video Quality Score</span>
+                      <span className="quality-score-value">{analysis.video_quality_score.toFixed(0)}%</span>
+                    </div>
+                    <div className="quality-score-status">
+                      {analysis.video_quality_valid ? (
+                        <span className="status-good">✅ Quality acceptable for gait analysis</span>
+                      ) : analysis.video_quality_score >= 60 ? (
+                        <span className="status-moderate">⚠️ Quality moderate - results may have reduced accuracy</span>
+                      ) : (
+                        <span className="status-poor">❌ Quality insufficient - consider re-recording video</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {analysis.pose_detection_rate !== undefined && (
+                  <div className="quality-metric-item">
+                    <strong>Pose Detection Rate:</strong> {(analysis.pose_detection_rate * 100).toFixed(1)}%
+                    <p className="metric-note">Percentage of video frames where body pose was successfully detected</p>
+                  </div>
+                )}
+
+                {analysis.video_quality_issues && analysis.video_quality_issues.length > 0 && (
+                  <div className="quality-issues-list">
+                    <h3>Issues Detected</h3>
+                    <ul>
+                      {analysis.video_quality_issues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysis.video_quality_recommendations && analysis.video_quality_recommendations.length > 0 && (
+                  <div className="quality-recommendations-list">
+                    <h3>💡 Tips for Better Video Quality</h3>
+                    <p className="recommendations-intro">
+                      For more accurate gait analysis results, consider the following recommendations when recording your next video:
+                    </p>
+                    <ul>
+                      {analysis.video_quality_recommendations.map((rec, idx) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                    <div className="general-tips">
+                      <h4>General Recording Tips:</h4>
+                      <ul>
+                        <li>Record 5-10 seconds of continuous walking</li>
+                        <li>Use side view for best gait parameter visibility</li>
+                        <li>Ensure person walks at comfortable pace</li>
+                        <li>Include at least 3-4 complete gait cycles</li>
+                        <li>Record on flat, level surface</li>
+                        <li>Good lighting with person clearly visible</li>
+                        <li>Keep camera steady and at person's hip height</li>
+                        <li>Ensure full body is visible in frame</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Parameter Reference Section */}
           <section className="report-section parameter-reference">
             <div className="section-header">
@@ -950,17 +1030,53 @@ export default function Report() {
         </div>
       )}
 
+      {/* Source Video Section */}
+      {analysis.video_url && (
+        <section className="report-section source-video-section">
+          <div className="section-header">
+            <Activity className="section-icon" size={24} />
+            <h2>Source Video</h2>
+          </div>
+          <div className="video-preview-container">
+            <p className="video-description">
+              This report is based on the following video. Click the thumbnail or button below to view the original video.
+            </p>
+            <div className="video-thumbnail-wrapper">
+              <a 
+                href={analysis.video_url} 
+                target="_blank"
+                rel="noopener noreferrer"
+                className="video-thumbnail-link"
+              >
+                <div className="video-thumbnail">
+                  <video 
+                    src={analysis.video_url} 
+                    className="thumbnail-video"
+                    preload="metadata"
+                    muted
+                  />
+                  <div className="video-play-overlay">
+                    <div className="play-button">▶</div>
+                    <p>Click to view original video</p>
+                  </div>
+                </div>
+              </a>
+            </div>
+            <div className="video-actions">
+              <a 
+                href={analysis.video_url} 
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary"
+              >
+                View Full Video
+              </a>
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="report-actions">
-        {analysis.video_url && (
-          <a 
-            href={analysis.video_url} 
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-secondary"
-          >
-            View Video
-          </a>
-        )}
         <button onClick={() => navigate('/view-reports')} className="btn btn-secondary">
           View All Reports
         </button>

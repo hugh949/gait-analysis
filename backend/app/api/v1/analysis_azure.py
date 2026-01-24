@@ -3518,4 +3518,99 @@ async def force_complete_analysis(
         )
 
 
+@router.delete(
+    "/{analysis_id}",
+    responses={
+        200: {"description": "Analysis deleted successfully"},
+        404: {"model": ErrorResponse, "description": "Analysis not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"}
+    }
+)
+async def delete_analysis(
+    analysis_id: str = PathParam(..., description="Analysis ID to delete")
+) -> JSONResponse:
+    """
+    Delete an analysis and its associated data
+    
+    Args:
+        analysis_id: Unique analysis identifier
+        
+    Returns:
+        JSONResponse with deletion status
+        
+    Raises:
+        HTTPException: If analysis not found or deletion fails
+    """
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[{request_id}] Delete analysis request", extra={"analysis_id": analysis_id})
+    
+    if db_service is None:
+        logger.error(f"[{request_id}] Database service not available")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "SERVICE_UNAVAILABLE",
+                "message": "Database service is not available",
+                "details": {}
+            }
+        )
+    
+    try:
+        # Get analysis to check if it exists
+        analysis = await db_service.get_analysis(analysis_id)
+        if not analysis:
+            logger.warning(f"[{request_id}] Analysis not found: {analysis_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "ANALYSIS_NOT_FOUND",
+                    "message": f"Analysis {analysis_id} not found",
+                    "details": {"analysis_id": analysis_id}
+                }
+            )
+        
+        # Delete analysis from database
+        # Check if delete_analysis method exists, otherwise use update to mark as deleted
+        if hasattr(db_service, 'delete_analysis'):
+            success = await db_service.delete_analysis(analysis_id)
+        else:
+            # Fallback: mark as deleted instead of hard delete
+            success = await db_service.update_analysis(analysis_id, {
+                'status': 'deleted',
+                'step_message': 'Analysis deleted by user'
+            })
+            logger.info(f"[{request_id}] Marked analysis as deleted (soft delete): {analysis_id}")
+        
+        if success:
+            logger.info(f"[{request_id}] ✅ Analysis deleted: {analysis_id}")
+            return JSONResponse({
+                "status": "success",
+                "message": f"Analysis {analysis_id} deleted successfully",
+                "analysis_id": analysis_id
+            })
+        else:
+            logger.error(f"[{request_id}] Failed to delete analysis: {analysis_id}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "DELETION_FAILED",
+                    "message": f"Failed to delete analysis {analysis_id}",
+                    "details": {"analysis_id": analysis_id}
+                }
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"[{request_id}] Error deleting analysis: {e}",
+            extra={"analysis_id": analysis_id, "error_type": type(e).__name__},
+            exc_info=True
+        )
+        raise DatabaseError(
+            f"Failed to delete analysis {analysis_id}",
+            details={"error": str(e), "analysis_id": analysis_id}
+        )
+
 

@@ -629,6 +629,256 @@
   }
 }
 
+/* Video Quality Section */
+.video-quality-section {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border: 2px solid #e9ecef;
+}
+
+.video-quality-content {
+  margin-top: 1.5rem;
+}
+
+.quality-score-card {
+  background: white;
+  border-radius: 10px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 2px solid;
+}
+
+.quality-score-card.quality-good {
+  border-color: #28a745;
+  background: linear-gradient(135deg, #f8fff9 0%, #ffffff 100%);
+}
+
+.quality-score-card.quality-moderate {
+  border-color: #ffc107;
+  background: linear-gradient(135deg, #fffef8 0%, #ffffff 100%);
+}
+
+.quality-score-card.quality-poor {
+  border-color: #dc3545;
+  background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+}
+
+.quality-score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.quality-score-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.quality-score-card.quality-good .quality-score-value {
+  color: #28a745;
+}
+
+.quality-score-card.quality-moderate .quality-score-value {
+  color: #ffc107;
+}
+
+.quality-score-card.quality-poor .quality-score-value {
+  color: #dc3545;
+}
+
+.quality-score-status {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.status-good {
+  color: #28a745;
+}
+
+.status-moderate {
+  color: #856404;
+}
+
+.status-poor {
+  color: #721c24;
+}
+
+.quality-metric-item {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2a5298;
+}
+
+.quality-metric-item strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #1e3c72;
+  font-size: 1rem;
+}
+
+.quality-metric-item .metric-note {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+.quality-issues-list,
+.quality-recommendations-list {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.quality-issues-list h3,
+.quality-recommendations-list h3 {
+  margin: 0 0 1rem 0;
+  color: #1e3c72;
+  font-size: 1.3rem;
+}
+
+.quality-issues-list ul,
+.quality-recommendations-list ul {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+  list-style-type: disc;
+}
+
+.quality-issues-list li,
+.quality-recommendations-list li {
+  margin: 0.75rem 0;
+  color: #495057;
+  line-height: 1.6;
+}
+
+.recommendations-intro {
+  color: #495057;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.general-tips {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid #e9ecef;
+}
+
+.general-tips h4 {
+  margin: 0 0 1rem 0;
+  color: #1e3c72;
+  font-size: 1.1rem;
+}
+
+.general-tips ul {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+
+.general-tips li {
+  margin: 0.5rem 0;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+/* Source Video Section */
+.source-video-section {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border: 2px solid #e9ecef;
+}
+
+.video-preview-container {
+  margin-top: 1.5rem;
+}
+
+.video-description {
+  color: #495057;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.video-thumbnail-wrapper {
+  margin: 2rem 0;
+  display: flex;
+  justify-content: center;
+}
+
+.video-thumbnail-link {
+  text-decoration: none;
+  display: block;
+  transition: transform 0.2s;
+}
+
+.video-thumbnail-link:hover {
+  transform: scale(1.02);
+}
+
+.video-thumbnail {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.thumbnail-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.video-play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  transition: background 0.2s;
+}
+
+.video-thumbnail-link:hover .video-play-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.play-button {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.video-play-overlay p {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.video-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
 /* Print Styles */
 @media print {
   .report-page {

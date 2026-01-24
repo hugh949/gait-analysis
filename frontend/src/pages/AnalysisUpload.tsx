@@ -582,6 +582,7 @@ export default function AnalysisUpload() {
               // This prevents the UI from being stuck forever
               console.log('✅ Marking as completed locally (backend status update may be delayed)')
               setStatus('completed')
+              setCurrentStep('report_generation') // CRITICAL: Ensure currentStep is set so step card shows as completed
               setStepProgress(100)
               setStepMessage('Analysis complete! Reports ready.')
               clearPollTimeout()
