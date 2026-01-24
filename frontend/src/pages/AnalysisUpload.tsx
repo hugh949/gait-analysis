@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, X, CheckCircle } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import './AnalysisUpload.css'
 
 const getApiUrl = () => {
@@ -1264,7 +1264,9 @@ export default function AnalysisUpload() {
                     <span className="step-number-label">Step 4:</span> Report Generation
                   </div>
                   <div className="step-description">
-                    {currentStep === 'report_generation' 
+                    {(status as UploadStatus) === 'completed' 
+                      ? 'Analysis complete! Report ready.'
+                      : currentStep === 'report_generation' 
                       ? (stepMessage || 'Generating detailed analysis reports...')
                       : currentStep && ['pose_estimation', '3d_lifting', 'metrics_calculation'].includes(currentStep)
                       ? 'Waiting for previous steps...'
@@ -1280,65 +1282,75 @@ export default function AnalysisUpload() {
                   )}
                 </div>
               </div>
+              
+              {/* View Report Button - Show below Step 4 when completed */}
+              {(status as UploadStatus) === 'completed' && analysisId && (
+                <div className="step-4-actions" style={{ 
+                  marginTop: '1.5rem', 
+                  padding: '1.5rem',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', color: '#2c3e50' }}>✅ Analysis Complete!</h4>
+                    <p style={{ margin: 0, color: '#666', fontSize: '0.95rem' }}>
+                      Your gait analysis report is ready to view.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <button 
+                      onClick={async () => {
+                        // Double-verify analysis is truly completed with metrics before navigating
+                        try {
+                          const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`)
+                          if (response.ok) {
+                            const data = await response.json()
+                            const hasValidMetrics = data.metrics && 
+                              Object.keys(data.metrics).length > 0 &&
+                              (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
+                            
+                            if (data.status === 'completed' && hasValidMetrics) {
+                              navigate(`/report/${analysisId}`)
+                            } else {
+                              // Not truly complete - resume processing automatically
+                              console.warn('Analysis not truly complete - resuming processing')
+                              setStatus('processing')
+                              setCurrentStep(data.current_step || 'report_generation')
+                              setStepProgress(data.step_progress || 98)
+                              setStepMessage(data.step_message || 'Saving analysis results...')
+                              // Resume polling immediately
+                              if (analysisId) {
+                                pollAnalysisStatus(analysisId)
+                              }
+                            }
+                          } else {
+                            setError('Failed to verify analysis status. Please try again.')
+                          }
+                        } catch (err) {
+                          console.error('Error verifying analysis:', err)
+                          setError('Failed to verify analysis status. Please try again.')
+                        }
+                      }}
+                      className="btn btn-primary btn-large"
+                      style={{ minWidth: '200px' }}
+                    >
+                      View Report
+                    </button>
+                    <button 
+                      onClick={() => navigate('/view-reports')} 
+                      className="btn btn-secondary"
+                      style={{ minWidth: '150px' }}
+                    >
+                      View All Reports
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {status === 'completed' && analysisId && (
-          <div className="completion-message">
-            <div className="completion-icon">
-              <CheckCircle size={48} />
-            </div>
-            <h3>✅ Analysis Complete!</h3>
-            <p>Your gait analysis is ready. Click the button below to view your comprehensive report.</p>
-            <div className="completion-actions">
-              <button 
-                onClick={async () => {
-                  // Double-verify analysis is truly completed with metrics before navigating
-                  try {
-                    const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`)
-                    if (response.ok) {
-                      const data = await response.json()
-                      const hasValidMetrics = data.metrics && 
-                        Object.keys(data.metrics).length > 0 &&
-                        (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
-                      
-                      if (data.status === 'completed' && hasValidMetrics) {
-                        navigate(`/report/${analysisId}`)
-                      } else {
-                        // Not truly complete - resume processing automatically
-                        console.warn('Analysis not truly complete - resuming processing')
-                        // Don't set error - just update status and continue
-                        setStatus('processing')
-                        setCurrentStep(data.current_step || 'report_generation')
-                        setStepProgress(data.step_progress || 98)
-                        setStepMessage(data.step_message || 'Saving analysis results...')
-                        // Resume polling immediately
-                        if (analysisId) {
-                          pollAnalysisStatus(analysisId)
-                        }
-                      }
-                    } else {
-                      setError('Failed to verify analysis status. Please try again.')
-                    }
-                  } catch (err) {
-                    console.error('Error verifying analysis:', err)
-                    setError('Failed to verify analysis status. Please try again.')
-                  }
-                }}
-                className="btn btn-primary btn-large"
-              >
-                View Report
-              </button>
-              <button 
-                onClick={() => navigate('/view-reports')} 
-                className="btn btn-secondary"
-              >
-                View All Reports
-              </button>
-            </div>
-          </div>
-        )}
 
         <button
           onClick={(e) => {

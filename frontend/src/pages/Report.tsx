@@ -883,13 +883,61 @@ export default function Report() {
                 Below is a comprehensive reference for all gait analysis parameters.
               </p>
               <div className="reference-grid">
-                {Object.entries(PARAMETER_DEFINITIONS).map(([key, def]) => (
-                  <div key={key} className="reference-item">
-                    <h4>{def.name}</h4>
-                    <p>{def.description}</p>
-                    <p className="clinical-significance"><strong>Clinical Significance:</strong> {def.clinicalSignificance}</p>
-                  </div>
-                ))}
+                {Object.entries(PARAMETER_DEFINITIONS).map(([key, def]) => {
+                  // Format value based on parameter type (gait lab standard format)
+                  const formatValue = (paramKey: string, value: any): string => {
+                    if (value === undefined || value === null) return 'N/A'
+                    
+                    switch (paramKey) {
+                      case 'walking_speed':
+                      case 'step_length':
+                      case 'stride_length':
+                      case 'step_width_mean':
+                        // Distance parameters: show in meters with 3 decimal places
+                        return `${(value / 1000).toFixed(3)} m`
+                      case 'cadence':
+                        // Cadence: show with 1 decimal place
+                        return `${value.toFixed(1)} steps/min`
+                      case 'step_time':
+                      case 'stance_time':
+                      case 'swing_time':
+                      case 'double_support_time':
+                        // Time parameters: show in seconds with 3 decimal places
+                        return `${value.toFixed(3)} s`
+                      case 'step_width_cv':
+                      case 'stride_speed_cv':
+                      case 'step_length_cv':
+                      case 'step_time_cv':
+                        // Variability (CV): show as percentage with 2 decimal places
+                        return `${value.toFixed(2)}% CV`
+                      case 'walk_ratio':
+                        // Walk ratio: show with 4 decimal places
+                        return `${value.toFixed(4)} mm/(steps/min)`
+                      case 'step_time_symmetry':
+                      case 'step_length_symmetry':
+                        // Symmetry: show as percentage with 1 decimal place
+                        return `${(value * 100).toFixed(1)}%`
+                      default:
+                        return String(value)
+                    }
+                  }
+                  
+                  const value = metrics[key as keyof typeof metrics]
+                  const formattedValue = formatValue(key, value)
+                  
+                  return (
+                    <div key={key} className="reference-item">
+                      <h4>
+                        {def.name}
+                        {value !== undefined && value !== null && (
+                          <span className="reference-value">: <strong>{formattedValue}</strong></span>
+                        )}
+                      </h4>
+                      <p>{def.description}</p>
+                      <p className="clinical-significance"><strong>Clinical Significance:</strong> {def.clinicalSignificance}</p>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </section>

@@ -452,6 +452,18 @@
   font-weight: 600;
 }
 
+.reference-value {
+  color: #2a5298;
+  font-weight: 400;
+  font-size: 0.95em;
+}
+
+.reference-value strong {
+  color: #1e3c72;
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
 .reference-item p {
   margin: 0.5rem 0;
   color: #495057;
