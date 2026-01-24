@@ -85,9 +85,13 @@ def initialize_services():
         db_service = None
         logger.warning("Database service unavailable - app will continue but database operations will fail")
 
+# CRITICAL: Log router state before service initialization
+logger.info(f"🔍 Router before service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
+
 # Initialize services at module load
 # CRITICAL: Don't raise on failure - allow app to start even if services fail
 # Services will be initialized lazily when needed
+# IMPORTANT: Service initialization errors should NOT prevent routes from being registered
 try:
     initialize_services()
 except Exception as e:
@@ -95,6 +99,9 @@ except Exception as e:
     # Don't raise - allow app to start, services will be None and handled gracefully
     # This prevents the entire app from failing to start if one service has issues
     logger.warning("App will continue to start, but some services may be unavailable")
+
+# CRITICAL: Log router state after service initialization to verify routes still exist
+logger.info(f"🔍 Router after service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
 def get_gait_analysis_service() -> Optional[GaitAnalysisService]:
     """Get or create gait analysis service instance with error handling"""
