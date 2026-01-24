@@ -1171,17 +1171,17 @@ export default function AnalysisUpload() {
                 currentStep === 'report_generation'
                   ? status === 'failed'
                     ? 'failed'
-                    : status === 'completed'
+                    : (status as UploadStatus) === 'completed'
                       ? 'completed'
                       : 'active'
-                  : status === 'completed'
+                  : (status as UploadStatus) === 'completed'
                     ? 'completed'
                     : 'pending'
               }`}>
                 <div className="step-indicator">
                   {status === 'failed' && currentStep === 'report_generation' ? (
                     <div className="step-error">✗</div>
-                  ) : status === 'completed' ? (
+                  ) : (status as UploadStatus) === 'completed' ? (
                     <div className="step-checkmark">✓</div>
                   ) : currentStep === 'report_generation' ? (
                     <div className="step-spinner">
