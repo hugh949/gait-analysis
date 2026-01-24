@@ -546,9 +546,9 @@ async def upload_video(
                 # CRITICAL: Verify the analysis is immediately readable in MEMORY before returning
                 # In-memory storage is the source of truth - check it first
                 if db_service and db_service._use_mock:
-                import os
-                import threading
-                analysis_in_memory = analysis_id in db_service._mock_storage
+                    import os
+                    import threading
+                    analysis_in_memory = analysis_id in db_service._mock_storage
                 logger.error(f"[{request_id}] 🔍🔍🔍 IMMEDIATE VERIFICATION (MEMORY) 🔍🔍🔍")
                 logger.error(f"[{request_id}] 🔍 Analysis ID: {analysis_id}")
                 logger.error(f"[{request_id}] 🔍 In-memory storage size: {len(db_service._mock_storage)}")
