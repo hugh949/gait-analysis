@@ -1420,12 +1420,47 @@ class GaitAnalysisService:
                 logger.warning(f"Error in progress callback: {e}")
         
         # Extract joint positions
+        logger.info(f"🔍 Starting joint position extraction from {len(frames_3d_keypoints)} frames...")
         left_ankle_positions = []
         right_ankle_positions = []
         left_heel_positions = []
         right_heel_positions = []
         
-        for keypoints in frames_3d_keypoints:
+        frames_with_ankles = 0
+        frames_processed = 0
+        for idx, keypoints in enumerate(frames_3d_keypoints):
+            frames_processed += 1
+            if idx == 0:
+                logger.info(f"🔍 First frame keys: {list(keypoints.keys())[:10] if isinstance(keypoints, dict) else 'NOT_A_DICT'}")
+            
+            if 'left_ankle' in keypoints and 'right_ankle' in keypoints:
+                frames_with_ankles += 1
+                left_ankle_positions.append([
+                    keypoints['left_ankle']['x'],
+                    keypoints['left_ankle']['y'],
+                    keypoints['left_ankle']['z']
+                ])
+                right_ankle_positions.append([
+                    keypoints['right_ankle']['x'],
+                    keypoints['right_ankle']['y'],
+                    keypoints['right_ankle']['z']
+                ])
+            
+            if 'left_heel' in keypoints:
+                left_heel_positions.append([
+                    keypoints['left_heel']['x'],
+                    keypoints['left_heel']['y'],
+                    keypoints['left_heel'].get('z', 0.0)
+                ])
+            if 'right_heel' in keypoints:
+                right_heel_positions.append([
+                    keypoints['right_heel']['x'],
+                    keypoints['right_heel']['y'],
+                    keypoints['right_heel'].get('z', 0.0)
+                ])
+        
+        logger.info(f"🔍 Joint extraction complete: {frames_processed} frames processed, {frames_with_ankles} frames with ankle data")
+        logger.info(f"🔍 Extracted: {len(left_ankle_positions)} left ankle positions, {len(right_ankle_positions)} right ankle positions")
             if 'left_ankle' in keypoints and 'right_ankle' in keypoints:
                 left_ankle_positions.append([
                     keypoints['left_ankle']['x'],
