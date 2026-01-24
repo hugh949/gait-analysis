@@ -175,38 +175,13 @@ async def upload_video(
     Raises:
         HTTPException: On validation errors or service failures
     """
-    # CRITICAL: Wrap entire function in try/except to catch ANY error, even before logging
-    request_id = None
-    try:
-        request_id = str(uuid.uuid4())[:8]
-    except Exception as e:
-        # Even UUID generation can fail - use fallback
-        import random
-        request_id = f"req{random.randint(1000, 9999)}"
-        logger.error(f"Failed to generate UUID for request_id: {e}")
-    
+    # MINIMAL START - just get request_id and log
+    request_id = str(uuid.uuid4())[:8]
     upload_request_start = time.time()
     
-    # CRITICAL: Log upload start immediately to track if request reaches server
-    # Use try/except to ensure logging never breaks the upload
-    try:
-        logger.info(
-            f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========",
-            extra={
-                "request_id": request_id,
-                "filename": file.filename if file else None,
-                "content_type": request.headers.get("content-type") if request else None,
-                "content_length": request.headers.get("content-length") if request else None,
-                "patient_id": patient_id,
-                "view_type": str(view_type) if view_type else None,
-                "fps": fps,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        )
-    except Exception as log_err:
-        # Logging failed - use print as fallback and continue
-        print(f"ERROR: Failed to log upload start: {log_err}")
-        logger.error(f"[{request_id}] Failed to log upload start: {log_err}", exc_info=True)
+    logger.info(f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========")
+    logger.info(f"[{request_id}] Filename: {file.filename if file else None}")
+    logger.info(f"[{request_id}] Patient ID: {patient_id}, View: {view_type}, FPS: {fps}")
     
     # Log estimated file size from Content-Length header if available
     content_length = request.headers.get("content-length")

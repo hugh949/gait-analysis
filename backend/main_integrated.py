@@ -391,6 +391,14 @@ else:
 if testing_router:
     app.include_router(testing_router, prefix="/api/v1", tags=["testing"])
 
+# Include simple upload router for testing
+try:
+    from app.api.v1.analysis_azure_simple_upload import router as simple_upload_router
+    app.include_router(simple_upload_router, prefix="/api/v1/analysis", tags=["testing"])
+    logger.info("✓ Simple upload router registered for testing")
+except Exception as e:
+    logger.warning(f"Failed to import simple upload router (non-critical): {e}")
+
 # Include logs router if available (for monitoring)
 if logs_router:
     app.include_router(logs_router, prefix="/api/v1", tags=["logs"])
