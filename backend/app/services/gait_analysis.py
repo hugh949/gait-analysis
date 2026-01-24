@@ -913,13 +913,13 @@ class GaitAnalysisService:
                 logger.error(f"❌ [STEP 3] _calculate_gait_metrics() returned EMPTY metrics!")
             logger.info("=" * 80)
             
-        # CRITICAL: Validate that metrics were actually calculated
-        logger.info(f"🔍 [STEP 3] Validating returned metrics...")
-        logger.info(f"🔍   - metrics is None: {metrics is None}")
-        logger.info(f"🔍   - metrics is empty dict: {metrics == {}}")
-        logger.info(f"🔍   - metrics length: {len(metrics) if metrics else 0}")
-        
-        if not metrics:
+            # CRITICAL: Validate that metrics were actually calculated
+            logger.info(f"🔍 [STEP 3] Validating returned metrics...")
+            logger.info(f"🔍   - metrics is None: {metrics is None}")
+            logger.info(f"🔍   - metrics is empty dict: {metrics == {}}")
+            logger.info(f"🔍   - metrics length: {len(metrics) if metrics else 0}")
+            
+            if not metrics:
                 error_msg = "CRITICAL: _calculate_gait_metrics returned empty metrics! Calculation may have failed silently."
                 logger.error(f"❌ {error_msg}")
                 raise GaitMetricsError(error_msg, details={
@@ -1536,7 +1536,6 @@ class GaitAnalysisService:
         
         logger.info(f"🔍 Joint extraction complete: {frames_processed} frames processed, {frames_with_ankles} frames with ankle data")
         logger.info(f"🔍 Extracted: {len(left_ankle_positions)} left ankle positions, {len(right_ankle_positions)} right ankle positions")
-            if 'left_ankle' in keypoints and 'right_ankle' in keypoints:
                 left_ankle_positions.append([
                     keypoints['left_ankle']['x'],
                     keypoints['left_ankle']['y'],
