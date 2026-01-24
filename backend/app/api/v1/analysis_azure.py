@@ -38,46 +38,6 @@ from app.core.schemas import (
 
 router = APIRouter()
 
-# CRITICAL: Add a simple test endpoint to verify router is working
-# This must be defined BEFORE service initialization to ensure it's registered
-@router.get("/test")
-async def test_endpoint():
-    """Test endpoint to verify router is registered"""
-    return {"status": "ok", "message": "Analysis router is working", "endpoint": "/api/v1/analysis/test"}
-
-# CRITICAL: Add a diagnostic endpoint to check router state
-@router.get("/diagnostics")
-async def diagnostics_endpoint():
-    """Diagnostic endpoint to check router and route registration"""
-    routes_info = []
-    if hasattr(router, 'routes'):
-        for route in router.routes:
-            route_info = {}
-            if hasattr(route, 'path'):
-                route_info['path'] = route.path
-            if hasattr(route, 'methods'):
-                route_info['methods'] = list(route.methods) if hasattr(route.methods, '__iter__') else [str(route.methods)]
-            routes_info.append(route_info)
-    
-    return {
-        "router_type": str(type(router)),
-        "has_routes_attr": hasattr(router, 'routes'),
-        "route_count": len(router.routes) if hasattr(router, 'routes') else 0,
-        "routes": routes_info,
-        "services": {
-            "storage": storage_service is not None,
-            "vision": vision_service is not None,
-            "database": db_service is not None,
-            "gait_analysis": _gait_analysis_service is not None
-        }
-    }
-
-# CRITICAL: Log router creation to verify it exists
-logger.info(f"🔍 Router created: {router}, type: {type(router)}")
-logger.info(f"🔍 Router has routes attr: {hasattr(router, 'routes')}")
-if hasattr(router, 'routes'):
-    logger.info(f"🔍 Initial route count: {len(router.routes)}")
-
 # Initialize services with error handling
 storage_service: Optional[AzureStorageService] = None
 vision_service: Optional[AzureVisionService] = None
@@ -112,8 +72,6 @@ def initialize_services():
         db_service = None
         logger.warning("Database service unavailable - app will continue but database operations will fail")
 
-# CRITICAL: Log router state before service initialization
-logger.info(f"🔍 Router before service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
 # Initialize services at module load
 # CRITICAL: Don't raise on failure - allow app to start even if services fail
@@ -130,8 +88,6 @@ except Exception as e:
     # CRITICAL: Ensure router is still valid even if services fail
     logger.warning(f"Router state after service init error: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
-# CRITICAL: Log router state after service initialization to verify routes still exist
-logger.info(f"🔍 Router after service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
 def get_gait_analysis_service() -> Optional[GaitAnalysisService]:
     """Get or create gait analysis service instance with error handling"""
@@ -175,8 +131,6 @@ def get_gait_analysis_service() -> Optional[GaitAnalysisService]:
 if db_service is None:
     logger.critical("Database service not initialized - API will not function correctly")
 
-# CRITICAL: Log router state before defining upload endpoint
-logger.info(f"🔍 Router before upload endpoint: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
 @router.post(
     "/upload",
@@ -2682,44 +2636,5 @@ async def force_complete_analysis(
             }
         )
 
-# CRITICAL: Log final router state at end of module
-# This ensures all routes are registered before module is considered loaded
-# CRITICAL: This must be at the very end to ensure all decorators have run
-try:
-    final_route_count = len(router.routes) if hasattr(router, 'routes') else 0
-    logger.info(f"🔍 Router final state: {final_route_count} routes")
-    
-    if final_route_count > 0:
-        logger.info("✅ Router has routes - endpoints should be available")
-        for route in router.routes:
-            if hasattr(route, 'path'):
-                methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
-                logger.info(f"  Final route: {methods} {route.path}")
-        
-        # Verify upload route exists
-        upload_route_exists = any(
-            hasattr(r, 'path') and r.path == '/upload' and 'POST' in (list(r.methods) if hasattr(r, 'methods') and hasattr(r.methods, '__iter__') else [])
-            for r in router.routes
-        )
-        if upload_route_exists:
-            logger.info("✅ Upload route (/upload) confirmed in router")
-        else:
-            logger.error("❌ CRITICAL: Upload route (/upload) NOT found in router routes!")
-            logger.error("❌ Available routes in router:")
-            for route in router.routes:
-                if hasattr(route, 'path'):
-                    methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
-                    logger.error(f"  {methods} {route.path}")
-    else:
-        logger.error("❌ CRITICAL: Router has no routes at end of module!")
-        logger.error("❌ This will cause 404 errors on all endpoints!")
-        logger.error("❌ Check for exceptions during module initialization that prevent decorators from running")
-except Exception as e:
-    logger.error(f"❌ CRITICAL: Error checking router final state: {e}", exc_info=True)
-    logger.error("❌ Router may not be properly initialized!")
-
-# CRITICAL: Ensure router is always exported, even if there were errors
-# This allows the app to start and attempt to register the router
-# The router will have routes if decorators ran successfully
 
 
