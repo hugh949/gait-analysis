@@ -236,148 +236,146 @@ async def upload_video(
         
         try:
             # CRITICAL: Check file size early and warn if it might timeout
-        # We can't check file.size directly for streaming uploads, but we can warn after first chunk
-        upload_start_time = time.time()
-        
-        # Create temp file with proper error handling
-        try:
-            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
-            tmp_path = tmp_file.name
-            logger.debug(f"[{request_id}] Created temp file: {tmp_path}")
-        except OSError as e:
-            logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
-            logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": "STORAGE_ERROR",
-                    "message": "Failed to create temporary file for upload",
-                    "details": {"error": str(e)}
-                }
-            )
-        
-        # Read file in chunks with size validation
-        # CRITICAL: Use smaller chunks for large files to prevent memory issues
-        # This prevents worker crashes during large file uploads
-        chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
-        chunk_count = 0
-        last_log_time = time.time()
-        try:
-            while True:
-                chunk = await file.read(chunk_size)
-                if not chunk:
-                    break
-                file_size += len(chunk)
-                chunk_count += 1
-                
-                # Write chunk immediately to reduce memory usage
-                tmp_file.write(chunk)
-                
-                # Log progress more frequently for large files (every 5MB or every 5 seconds)
-                current_time = time.time()
-                if chunk_count % 20 == 0 or (current_time - last_log_time) >= 5.0:  # Every 20 chunks (~5MB) or every 5 seconds
-                    elapsed = current_time - upload_start_time
-                    upload_rate = (file_size / elapsed) / (1024 * 1024) if elapsed > 0 else 0  # MB/s
-                    estimated_total_time = (file_size / upload_rate) if upload_rate > 0 else 0
-                    logger.info(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read ({chunk_count} chunks, {elapsed:.1f}s elapsed, {upload_rate:.2f}MB/s, est. {estimated_total_time:.1f}s total)")
+            # We can't check file.size directly for streaming uploads, but we can warn after first chunk
+            upload_start_time = time.time()
+            
+            # Create temp file with proper error handling
+            try:
+                tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
+                tmp_path = tmp_file.name
+                logger.debug(f"[{request_id}] Created temp file: {tmp_path}")
+            except OSError as e:
+                logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "error": "STORAGE_ERROR",
+                        "message": "Failed to create temporary file for upload",
+                        "details": {"error": str(e)}
+                    }
+                )
+            
+            # Read file in chunks with size validation
+            # CRITICAL: Use smaller chunks for large files to prevent memory issues
+            # This prevents worker crashes during large file uploads
+            chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
+            chunk_count = 0
+            last_log_time = time.time()
+            try:
+                while True:
+                    chunk = await file.read(chunk_size)
+                    if not chunk:
+                        break
+                    file_size += len(chunk)
+                    chunk_count += 1
                     
-                    # Warn if upload is taking too long (approaching 230s timeout)
-                    if elapsed > 180:  # 3 minutes - getting close to 230s timeout
-                        logger.warning(f"[{request_id}] ⚠️ Upload taking longer than expected ({elapsed:.1f}s). Azure timeout is 230s. File may timeout.")
+                    # Write chunk immediately to reduce memory usage
+                    tmp_file.write(chunk)
                     
-                    last_log_time = current_time
-                
-                # Check file size limit
-                if file_size > MAX_FILE_SIZE:
-                    tmp_file.close()
-                    os.unlink(tmp_path)
-                    logger.error(
-                        f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
-                        extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
-                    )
-                    logger.error(f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
-                    return JSONResponse(
-                        status_code=413,
-                        content={
-                            "error": "VALIDATION_ERROR",
-                            "message": f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
-                            "field": "file",
-                            "details": {"file_size": file_size, "max_size": MAX_FILE_SIZE}
-                        }
-                    )
+                    # Log progress more frequently for large files (every 5MB or every 5 seconds)
+                    current_time = time.time()
+                    if chunk_count % 20 == 0 or (current_time - last_log_time) >= 5.0:  # Every 20 chunks (~5MB) or every 5 seconds
+                        elapsed = current_time - upload_start_time
+                        upload_rate = (file_size / elapsed) / (1024 * 1024) if elapsed > 0 else 0  # MB/s
+                        estimated_total_time = (file_size / upload_rate) if upload_rate > 0 else 0
+                        logger.info(f"[{request_id}] Upload progress: {file_size / (1024*1024):.1f}MB read ({chunk_count} chunks, {elapsed:.1f}s elapsed, {upload_rate:.2f}MB/s, est. {estimated_total_time:.1f}s total)")
+                        
+                        # Warn if upload is taking too long (approaching 230s timeout)
+                        if elapsed > 180:  # 3 minutes - getting close to 230s timeout
+                            logger.warning(f"[{request_id}] ⚠️ Upload taking longer than expected ({elapsed:.1f}s). Azure timeout is 230s. File may timeout.")
+                        
+                        last_log_time = current_time
                     
-                    tmp_file.close()
-                    upload_duration = time.time() - upload_start_time
-                    upload_rate = (file_size / upload_duration) / (1024 * 1024) if upload_duration > 0 else 0  # MB/s
-                    
-                    logger.info(
-                        f"[{request_id}] File uploaded successfully",
-                        extra={
-                            "filename": file.filename,
-                            "size": file_size,
-                            "size_mb": file_size / (1024*1024),
-                            "path": tmp_path,
-                            "upload_duration": upload_duration,
-                            "upload_rate_mbps": upload_rate,
-                            "chunks": chunk_count
-                        }
-                    )
-                    
-                    # CRITICAL: Warn if upload is approaching timeout
-                    if upload_duration > 200:  # 200 seconds - very close to 230s timeout
+                    # Check file size limit
+                    if file_size > MAX_FILE_SIZE:
+                        tmp_file.close()
+                        os.unlink(tmp_path)
                         logger.error(
-                            f"[{request_id}] ⚠️ CRITICAL: Upload took {upload_duration:.1f}s (Azure timeout is 230s). "
-                            f"File may have timed out. Size: {file_size / (1024*1024):.1f}MB"
+                            f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
+                            extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
                         )
-                    elif upload_duration > 180:  # 3 minutes - getting close
-                        logger.warning(
-                            f"[{request_id}] ⚠️ Upload took {upload_duration:.1f}s (approaching 230s Azure timeout). "
-                            f"File size: {file_size / (1024*1024):.1f}MB. "
-                            f"Consider using smaller files (<50MB) to avoid timeout issues."
+                        return JSONResponse(
+                            status_code=413,
+                            content={
+                                "error": "VALIDATION_ERROR",
+                                "message": f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
+                                "field": "file",
+                                "details": {"file_size": file_size, "max_size": MAX_FILE_SIZE}
+                            }
                         )
-                    elif file_size > MAX_RECOMMENDED_SIZE:
-                        logger.warning(
-                            f"[{request_id}] ⚠️ Large file uploaded ({file_size / (1024*1024):.1f}MB). "
-                            f"Upload took {upload_duration:.1f}s. "
-                            f"Azure App Service has a 230-second request timeout. "
-                            f"Consider using smaller files (<50MB) to avoid timeout issues."
-                        )
-        except Exception as e:
-            tmp_file.close()
-            if tmp_path and os.path.exists(tmp_path):
-                try:
+                
+                tmp_file.close()
+                upload_duration = time.time() - upload_start_time
+                upload_rate = (file_size / upload_duration) / (1024 * 1024) if upload_duration > 0 else 0  # MB/s
+                
+                logger.info(
+                    f"[{request_id}] File uploaded successfully",
+                    extra={
+                        "filename": file.filename,
+                        "size": file_size,
+                        "size_mb": file_size / (1024*1024),
+                        "path": tmp_path,
+                        "upload_duration": upload_duration,
+                        "upload_rate_mbps": upload_rate,
+                        "chunks": chunk_count
+                    }
+                )
+                
+                # CRITICAL: Warn if upload is approaching timeout
+                if upload_duration > 200:  # 200 seconds - very close to 230s timeout
+                    logger.error(
+                        f"[{request_id}] ⚠️ CRITICAL: Upload took {upload_duration:.1f}s (Azure timeout is 230s). "
+                        f"File may have timed out. Size: {file_size / (1024*1024):.1f}MB"
+                    )
+                elif upload_duration > 180:  # 3 minutes - getting close
+                    logger.warning(
+                        f"[{request_id}] ⚠️ Upload took {upload_duration:.1f}s (approaching 230s Azure timeout). "
+                        f"File size: {file_size / (1024*1024):.1f}MB. "
+                        f"Consider using smaller files (<50MB) to avoid timeout issues."
+                    )
+                elif file_size > MAX_RECOMMENDED_SIZE:
+                    logger.warning(
+                        f"[{request_id}] ⚠️ Large file uploaded ({file_size / (1024*1024):.1f}MB). "
+                        f"Upload took {upload_duration:.1f}s. "
+                        f"Azure App Service has a 230-second request timeout. "
+                        f"Consider using smaller files (<50MB) to avoid timeout issues."
+                    )
+            except Exception as e:
+                tmp_file.close()
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except:
+                        pass
+                logger.error(f"[{request_id}] Error reading uploaded file: {e}", exc_info=True)
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "error": "VIDEO_PROCESSING_ERROR",
+                        "message": "Failed to read uploaded file",
+                        "details": {"error": str(e)}
+                    }
+            )
+            
+            # Validate file is not empty
+            if file_size == 0:
+                if tmp_path and os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                except:
-                    pass
-            logger.error(f"[{request_id}] Error reading uploaded file: {e}", exc_info=True)
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": "VIDEO_PROCESSING_ERROR",
-                    "message": "Failed to read uploaded file",
-                    "details": {"error": str(e)}
-                }
-            )
-        
-        # Validate file is not empty
-        if file_size == 0:
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-            logger.error(f"[{request_id}] Empty file uploaded")
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "VALIDATION_ERROR",
-                    "message": "Uploaded file is empty",
-                    "field": "file"
-                }
-            )
-        
-        # Generate analysis ID
-        analysis_id = str(uuid.uuid4())
-        logger.info(f"[{request_id}] Generated analysis ID: {analysis_id}")
-        
-        # CRITICAL: Validate video quality BEFORE uploading to blob storage
+                logger.error(f"[{request_id}] Empty file uploaded")
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "VALIDATION_ERROR",
+                        "message": "Uploaded file is empty",
+                        "field": "file"
+                    }
+                )
+            
+            # Generate analysis ID
+            analysis_id = str(uuid.uuid4())
+            logger.info(f"[{request_id}] Generated analysis ID: {analysis_id}")
+            
+            # CRITICAL: Validate video quality BEFORE uploading to blob storage
         # This allows us to provide immediate feedback to user
         # NOTE: Validation is optional - if it fails, we continue without it
         logger.info(f"[{request_id}] 🔍 Validating video quality for gait analysis...")
@@ -435,11 +433,11 @@ async def upload_video(
                 logger.warning(f"[{request_id}] Unexpected error during video quality validation: {outer_error}", exc_info=True)
                 logger.warning(f"[{request_id}] Processing will continue without quality validation")
                 quality_result = None
-        else:
-            logger.warning(f"[{request_id}] ⚠️ Cannot validate video quality - temp file not accessible")
-        
-        # Upload to Azure Blob Storage (or keep temp file in mock mode)
-        try:
+            else:
+                logger.warning(f"[{request_id}] ⚠️ Cannot validate video quality - temp file not accessible")
+            
+            # Upload to Azure Blob Storage (or keep temp file in mock mode)
+            try:
             if storage_service is None:
                 logger.warning(f"[{request_id}] Storage service not available, using mock mode")
                 video_url = tmp_path  # Use temp file directly in mock mode
@@ -476,15 +474,15 @@ async def upload_video(
                     "details": {"error": str(e)}
                 }
             )
-        
-        # Store metadata in Azure SQL Database
-        logger.error(f"[{request_id}] ========== CREATING ANALYSIS RECORD ==========")
-        logger.error(f"[{request_id}] Analysis ID: {analysis_id}")
-        logger.error(f"[{request_id}] Patient ID: {patient_id}")
-        logger.error(f"[{request_id}] Video URL: {video_url}")
-        logger.error(f"[{request_id}] File name: {file.filename}")
-        
-        try:
+            
+            # Store metadata in Azure SQL Database
+            logger.error(f"[{request_id}] ========== CREATING ANALYSIS RECORD ==========")
+            logger.error(f"[{request_id}] Analysis ID: {analysis_id}")
+            logger.error(f"[{request_id}] Patient ID: {patient_id}")
+            logger.error(f"[{request_id}] Video URL: {video_url}")
+            logger.error(f"[{request_id}] File name: {file.filename}")
+            
+            try:
             # Include quality validation results in analysis data
             analysis_data = {
                 'id': analysis_id,
@@ -671,9 +669,9 @@ async def upload_video(
                     "details": {"error": str(e)}
                 }
             )
-        
-        # Process in background
-        try:
+            
+            # Process in background
+            try:
             # view_type is now a string, not an enum
             view_type_str = str(view_type)
             
@@ -752,13 +750,13 @@ async def upload_video(
                 logger.error(f"[{request_id}] 🔧 Thread: {threading.current_thread().ident}, {threading.current_thread().name}")
                 try:
                     await process_analysis_azure(
-            analysis_id,
-            video_url,
-            patient_id,
+                        analysis_id,
+                        video_url,
+                        patient_id,
                         view_type_str,
-            reference_length_mm,
-            fps
-        )
+                        reference_length_mm,
+                        fps
+                    )
                     logger.error(f"[{request_id}] 🔧✅ Background task completed successfully")
                 except Exception as wrapper_error:
                     logger.error(f"[{request_id}] 🔧❌ Background task failed: {type(wrapper_error).__name__}: {wrapper_error}", exc_info=True)
@@ -843,36 +841,36 @@ async def upload_video(
             except:
                 pass
             logger.error(f"[{request_id}] Failed to schedule video analysis: {e}", exc_info=True)
-            # Don't fail the upload - analysis is created, just log the error
-            # The analysis will remain in 'processing' status
-        
-        upload_total_duration = time.time() - upload_request_start
-        logger.info(
-            f"[{request_id}] ========== UPLOAD REQUEST COMPLETE ==========",
-            extra={
-                "request_id": request_id,
+                # Don't fail the upload - analysis is created, just log the error
+                # The analysis will remain in 'processing' status
+            
+            upload_total_duration = time.time() - upload_request_start
+            logger.info(
+                f"[{request_id}] ========== UPLOAD REQUEST COMPLETE ==========",
+                extra={
+                    "request_id": request_id,
+                    "analysis_id": analysis_id,
+                    "total_duration": upload_total_duration,
+                    "file_size_mb": file_size / (1024*1024) if file_size > 0 else 0,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            
+            # CRITICAL: Warn if total request time is approaching timeout
+            if upload_total_duration > 200:
+                logger.error(f"[{request_id}] ⚠️ CRITICAL: Total upload request took {upload_total_duration:.1f}s (Azure timeout: 230s). Response may not reach client.")
+            elif upload_total_duration > 180:
+                logger.warning(f"[{request_id}] ⚠️ Upload request took {upload_total_duration:.1f}s (approaching 230s Azure timeout)")
+            
+            # Return response - use string for status to avoid enum issues
+            # Return JSONResponse directly (like simple endpoint) to avoid Pydantic serialization issues
+            return JSONResponse({
                 "analysis_id": analysis_id,
-                "total_duration": upload_total_duration,
-                "file_size_mb": file_size / (1024*1024) if file_size > 0 else 0,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        )
-        
-        # CRITICAL: Warn if total request time is approaching timeout
-        if upload_total_duration > 200:
-            logger.error(f"[{request_id}] ⚠️ CRITICAL: Total upload request took {upload_total_duration:.1f}s (Azure timeout: 230s). Response may not reach client.")
-        elif upload_total_duration > 180:
-            logger.warning(f"[{request_id}] ⚠️ Upload request took {upload_total_duration:.1f}s (approaching 230s Azure timeout)")
-        
-        # Return response - use string for status to avoid enum issues
-        # Return JSONResponse directly (like simple endpoint) to avoid Pydantic serialization issues
-        return JSONResponse({
-            "analysis_id": analysis_id,
-            "status": "processing",
-            "message": "Video uploaded successfully. Analysis in progress.",
-            "patient_id": patient_id,
-            "created_at": datetime.utcnow().isoformat()
-        })
+                "status": "processing",
+                "message": "Video uploaded successfully. Analysis in progress.",
+                "patient_id": patient_id,
+                "created_at": datetime.utcnow().isoformat()
+            })
     
     except (ValidationError, VideoProcessingError, StorageError, DatabaseError) as e:
         # Convert custom exceptions to HTTP exceptions
