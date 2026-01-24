@@ -141,7 +141,7 @@ async def upload_video(
     fps: float = Query(30.0, gt=0, le=120, description="Video frames per second"),
     request: Request = None,
     background_tasks: BackgroundTasks = None
-):
+) -> JSONResponse:
     """
     Upload video for gait analysis using Azure native services
     
@@ -161,18 +161,17 @@ async def upload_video(
         fps: Video frames per second
         
     Returns:
-        AnalysisResponse with analysis_id and status
-        
-    Raises:
-        HTTPException: On validation errors or service failures
+        JSONResponse with analysis_id and status
     """
-    # MINIMAL START - just get request_id and log
-    request_id = str(uuid.uuid4())[:8]
-    upload_request_start = time.time()
-    
-    logger.info(f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========")
-    logger.info(f"[{request_id}] Filename: {file.filename if file else None}")
-    logger.info(f"[{request_id}] Patient ID: {patient_id}, View: {view_type}, FPS: {fps}")
+    # CRITICAL: Wrap entire function in try/except to catch ANY error
+    try:
+        # MINIMAL START - just get request_id and log
+        request_id = str(uuid.uuid4())[:8]
+        upload_request_start = time.time()
+        
+        logger.info(f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========")
+        logger.info(f"[{request_id}] Filename: {file.filename if file else None}")
+        logger.info(f"[{request_id}] Patient ID: {patient_id}, View: {view_type}, FPS: {fps}")
     
     # Log estimated file size from Content-Length header if available
     content_length = None
@@ -936,6 +935,38 @@ async def upload_video(
                 "details": {
                     "error_type": error_type,
                     "error_message": error_msg,
+                    "request_id": request_id
+                }
+            }
+        )
+    except Exception as outer_error:
+        # Catch ANY error that wasn't caught above - this is the ultimate safety net
+        error_type = type(outer_error).__name__
+        error_msg = str(outer_error)
+        request_id = getattr(outer_error, 'request_id', 'unknown')
+        try:
+            import traceback
+            error_traceback = traceback.format_exc()
+        except:
+            error_traceback = None
+        
+        logger.critical(
+            f"[{request_id}] ❌❌❌ CRITICAL: Unhandled exception in upload_video ❌❌❌",
+            extra={
+                "error_type": error_type,
+                "error_message": error_msg,
+                "error_traceback": error_traceback
+            },
+            exc_info=True
+        )
+        
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "INTERNAL_SERVER_ERROR",
+                "message": f"Upload failed: {error_type}: {error_msg}",
+                "details": {
+                    "error_type": error_type,
                     "request_id": request_id
                 }
             }
