@@ -2359,26 +2359,66 @@ async def process_analysis_azure(
                 logger.info("=" * 80)
                 
                 if verification and verification.get('status') == 'completed':
-                    if verification.get('metrics'):
+                    # CRITICAL: Verify both metrics AND steps_completed are present
+                    has_metrics = bool(verification.get('metrics'))
+                    steps_completed = verification.get('steps_completed', {})
+                    all_steps_complete = (
+                        steps_completed.get('step_1_pose_estimation') == True and
+                        steps_completed.get('step_2_3d_lifting') == True and
+                        steps_completed.get('step_3_metrics_calculation') == True and
+                        steps_completed.get('step_4_report_generation') == True
+                    )
+                    
+                    if has_metrics and all_steps_complete:
                         completion_success = True
                         logger.info("=" * 80)
                         logger.info(f"[{request_id}] ✅ [STEP 4] COMPLETION VERIFICATION PASSED")
                         logger.info(f"[{request_id}] ✅   - Status: completed")
                         logger.info(f"[{request_id}] ✅   - Has metrics: True")
                         logger.info(f"[{request_id}] ✅   - Metrics count: {len(verification.get('metrics', {}))}")
+                        logger.info(f"[{request_id}] ✅   - All steps completed: True")
+                        logger.info(f"[{request_id}] ✅   - steps_completed: {steps_completed}")
                         logger.info("=" * 80)
                     else:
-                        logger.warning(f"[{request_id}] ⚠️ [STEP 4] Status is 'completed' but no metrics - retrying...")
-                        # Try one more update with metrics
-                        await asyncio.sleep(0.1)  # Reduced delay (was 0.2)
-                        await db_service.update_analysis(analysis_id, {'metrics': metrics})
-                        await asyncio.sleep(0.1)  # Reduced delay
+                        logger.warning(f"[{request_id}] ⚠️ [STEP 4] Status is 'completed' but verification incomplete:")
+                        logger.warning(f"[{request_id}] ⚠️   - Has metrics: {has_metrics}")
+                        logger.warning(f"[{request_id}] ⚠️   - All steps complete: {all_steps_complete}")
+                        logger.warning(f"[{request_id}] ⚠️   - steps_completed: {steps_completed}")
+                        # Retry to add missing data
+                        if not has_metrics:
+                            logger.info(f"[{request_id}] 🔄 Retrying to add metrics...")
+                            await asyncio.sleep(0.1)
+                            await db_service.update_analysis(analysis_id, {'metrics': metrics})
+                        if not all_steps_complete:
+                            logger.info(f"[{request_id}] 🔄 Retrying to add steps_completed...")
+                            await asyncio.sleep(0.1)
+                            await db_service.update_analysis(analysis_id, {
+                                'steps_completed': {
+                                    'step_1_pose_estimation': True,
+                                    'step_2_3d_lifting': True,
+                                    'step_3_metrics_calculation': True,
+                                    'step_4_report_generation': True
+                                }
+                            })
+                        # Re-verify after retry
+                        await asyncio.sleep(0.1)
                         verification2 = await db_service.get_analysis(analysis_id)
-                        if verification2 and verification2.get('metrics'):
-                            completion_success = True
-                            logger.info(f"[{request_id}] ✅ [STEP 4] Metrics added on retry - verification passed")
+                        if verification2 and verification2.get('status') == 'completed':
+                            has_metrics2 = bool(verification2.get('metrics'))
+                            steps_completed2 = verification2.get('steps_completed', {})
+                            all_steps_complete2 = (
+                                steps_completed2.get('step_1_pose_estimation') == True and
+                                steps_completed2.get('step_2_3d_lifting') == True and
+                                steps_completed2.get('step_3_metrics_calculation') == True and
+                                steps_completed2.get('step_4_report_generation') == True
+                            )
+                            if has_metrics2 and all_steps_complete2:
+                                completion_success = True
+                                logger.info(f"[{request_id}] ✅ [STEP 4] Verification passed after retry")
+                            else:
+                                logger.error(f"[{request_id}] ❌ [STEP 4] Verification still failed after retry")
                         else:
-                            logger.error(f"[{request_id}] ❌ [STEP 4] Metrics retry failed")
+                            logger.error(f"[{request_id}] ❌ [STEP 4] Status not 'completed' after retry")
                 else:
                     logger.warning(f"[{request_id}] ⚠️ [STEP 4] Verification failed:")
                     logger.warning(f"[{request_id}] ⚠️   - Status: {verification.get('status') if verification else 'None'}")

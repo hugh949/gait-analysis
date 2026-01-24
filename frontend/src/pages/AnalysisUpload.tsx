@@ -501,6 +501,15 @@ export default function AnalysisUpload() {
             stepsCompleted.step_4_report_generation === true
           )
           
+          console.log('📊 Completion check:', {
+            status: analysisStatus,
+            hasValidMetrics,
+            allStepsComplete,
+            stepsCompleted,
+            stepProgress: data.step_progress,
+            currentStep: data.current_step
+          })
+          
           // Check if analysis is stuck (in report_generation with high progress but missing metrics/steps)
           const isStuck = (
             data.current_step === 'report_generation' &&
@@ -1158,10 +1167,12 @@ export default function AnalysisUpload() {
                 </div>
               </div>
               
-              <div className={`step-card ${currentStep === 'report_generation' ? (status === 'failed' ? 'failed' : 'active') : 'pending'}`}>
+              <div className={`step-card ${currentStep === 'report_generation' ? (status === 'failed' ? 'failed' : status === 'completed' ? 'completed' : 'active') : status === 'completed' ? 'completed' : 'pending'}`}>
                 <div className="step-indicator">
                   {currentStep === 'report_generation' && status === 'failed' ? (
                     <div className="step-error">✗</div>
+                  ) : (currentStep === 'report_generation' && status === 'completed') || (status === 'completed' && currentStep === 'report_generation') ? (
+                    <div className="step-checkmark">✓</div>
                   ) : currentStep === 'report_generation' ? (
                     <div className="step-spinner">
                       <Loader2 className="spinner-icon" />
