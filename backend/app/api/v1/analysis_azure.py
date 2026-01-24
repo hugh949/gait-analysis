@@ -812,9 +812,10 @@ async def upload_video(
         elif upload_total_duration > 180:
             logger.warning(f"[{request_id}] ⚠️ Upload request took {upload_total_duration:.1f}s (approaching 230s Azure timeout)")
         
+        # Return response - use string for status to avoid enum issues
         return AnalysisResponse(
             analysis_id=analysis_id,
-            status=AnalysisStatus.PROCESSING,
+            status="processing",  # Use string instead of enum
             message="Video uploaded successfully. Analysis in progress.",
             patient_id=patient_id,
             created_at=datetime.utcnow()

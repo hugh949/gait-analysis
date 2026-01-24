@@ -72,7 +72,7 @@ class VideoUploadRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """Response model for analysis operations"""
     analysis_id: str = Field(..., description="Unique analysis identifier")
-    status: AnalysisStatus = Field(..., description="Current analysis status")
+    status: str = Field(..., description="Current analysis status")  # Changed from AnalysisStatus enum to string
     message: str = Field(..., description="Status message")
     patient_id: Optional[str] = Field(None, description="Patient identifier")
     created_at: Optional[datetime] = Field(None, description="Analysis creation timestamp")
