@@ -673,54 +673,54 @@ async def upload_video(
                 async def immediate_keepalive():
                     """Immediate keep-alive that starts right after analysis creation"""
                     keepalive_count = 0
-                logger.info(f"[{request_id}] 🔄 IMMEDIATE KEEP-ALIVE STARTED for analysis {analysis_id}")
-                try:
-                    # Start with very frequent updates (every 2 seconds) for first 30 seconds
-                    # Then switch to every 5 seconds
-                    while True:
-                        sleep_time = 2 if keepalive_count < 15 else 5
-                        await asyncio.sleep(sleep_time)
-                        keepalive_count += 1
-                        try:
-                            # Verify and update analysis to keep it alive
-                            logger.info(f"[{request_id}] 🔄 Keep-alive heartbeat #{keepalive_count} - checking analysis {analysis_id}")
-                            current_analysis = await db_service.get_analysis(analysis_id)
-                            if current_analysis:
-                                logger.info(f"[{request_id}] 🔄 Keep-alive: Analysis {analysis_id} found - updating to keep alive (status: {current_analysis.get('status')}, step: {current_analysis.get('current_step')}, progress: {current_analysis.get('step_progress')}%)")
-                                await db_service.update_analysis(analysis_id, {
-                                    'status': 'processing',
-                                    'current_step': current_analysis.get('current_step', 'pose_estimation'),
-                                    'step_progress': current_analysis.get('step_progress', 0),
-                                    'step_message': current_analysis.get('step_message', 'Initializing analysis...')
-                                })
-                                logger.info(f"[{request_id}] ✅ Keep-alive: Analysis {analysis_id} updated successfully (heartbeat #{keepalive_count})")
-                            else:
-                                logger.warning(f"[{request_id}] ⚠️ Keep-alive: Analysis {analysis_id} NOT FOUND - recreating (heartbeat #{keepalive_count})")
-                                await db_service.create_analysis({
-                                    'id': analysis_id,
-                                    'patient_id': patient_id,
-                                    'filename': file.filename or 'unknown',
-                                    'video_url': video_url,
-                                    'status': 'processing',
-                                    'current_step': 'pose_estimation',
-                                    'step_progress': 0,
-                                    'step_message': f'Analysis recreated by keep-alive (heartbeat #{keepalive_count})'
-                                })
-                                logger.info(f"[{request_id}] ✅ Keep-alive: Recreated analysis {analysis_id} (heartbeat #{keepalive_count})")
-                        except Exception as keepalive_error:
-                            logger.error(f"[{request_id}] ❌ Keep-alive error on heartbeat #{keepalive_count}: {keepalive_error}", exc_info=True)
-                except asyncio.CancelledError:
-                    logger.warning(f"[{request_id}] 🛑 Keep-alive CANCELLED after {keepalive_count} heartbeats - this should not happen!")
-                    # Try to restart keep-alive if cancelled (shouldn't happen, but safety)
+                    logger.info(f"[{request_id}] 🔄 IMMEDIATE KEEP-ALIVE STARTED for analysis {analysis_id}")
                     try:
-                        logger.warning(f"[{request_id}] ⚠️ Keep-alive was cancelled - analysis may become invisible")
-                        # Don't restart - just log the issue
-                    except:
-                        pass
-                except Exception as e:
-                    logger.error(f"[{request_id}] ❌ Keep-alive fatal error after {keepalive_count} heartbeats: {e}", exc_info=True)
-                    # Log the error but don't try to continue - let the outer loop handle it
-                    # The outer while True loop will continue if this exception is caught
+                        # Start with very frequent updates (every 2 seconds) for first 30 seconds
+                        # Then switch to every 5 seconds
+                        while True:
+                            sleep_time = 2 if keepalive_count < 15 else 5
+                            await asyncio.sleep(sleep_time)
+                            keepalive_count += 1
+                            try:
+                                # Verify and update analysis to keep it alive
+                                logger.info(f"[{request_id}] 🔄 Keep-alive heartbeat #{keepalive_count} - checking analysis {analysis_id}")
+                                current_analysis = await db_service.get_analysis(analysis_id)
+                                if current_analysis:
+                                    logger.info(f"[{request_id}] 🔄 Keep-alive: Analysis {analysis_id} found - updating to keep alive (status: {current_analysis.get('status')}, step: {current_analysis.get('current_step')}, progress: {current_analysis.get('step_progress')}%)")
+                                    await db_service.update_analysis(analysis_id, {
+                                        'status': 'processing',
+                                        'current_step': current_analysis.get('current_step', 'pose_estimation'),
+                                        'step_progress': current_analysis.get('step_progress', 0),
+                                        'step_message': current_analysis.get('step_message', 'Initializing analysis...')
+                                    })
+                                    logger.info(f"[{request_id}] ✅ Keep-alive: Analysis {analysis_id} updated successfully (heartbeat #{keepalive_count})")
+                                else:
+                                    logger.warning(f"[{request_id}] ⚠️ Keep-alive: Analysis {analysis_id} NOT FOUND - recreating (heartbeat #{keepalive_count})")
+                                    await db_service.create_analysis({
+                                        'id': analysis_id,
+                                        'patient_id': patient_id,
+                                        'filename': file.filename or 'unknown',
+                                        'video_url': video_url,
+                                        'status': 'processing',
+                                        'current_step': 'pose_estimation',
+                                        'step_progress': 0,
+                                        'step_message': f'Analysis recreated by keep-alive (heartbeat #{keepalive_count})'
+                                    })
+                                    logger.info(f"[{request_id}] ✅ Keep-alive: Recreated analysis {analysis_id} (heartbeat #{keepalive_count})")
+                            except Exception as keepalive_error:
+                                logger.error(f"[{request_id}] ❌ Keep-alive error on heartbeat #{keepalive_count}: {keepalive_error}", exc_info=True)
+                    except asyncio.CancelledError:
+                        logger.warning(f"[{request_id}] 🛑 Keep-alive CANCELLED after {keepalive_count} heartbeats - this should not happen!")
+                        # Try to restart keep-alive if cancelled (shouldn't happen, but safety)
+                        try:
+                            logger.warning(f"[{request_id}] ⚠️ Keep-alive was cancelled - analysis may become invisible")
+                            # Don't restart - just log the issue
+                        except:
+                            pass
+                    except Exception as e:
+                        logger.error(f"[{request_id}] ❌ Keep-alive fatal error after {keepalive_count} heartbeats: {e}", exc_info=True)
+                        # Log the error but don't try to continue - let the outer loop handle it
+                        # The outer while True loop will continue if this exception is caught
                 
                 # Start immediate keep-alive task
                 # CRITICAL: Create task in the event loop - it will run independently
