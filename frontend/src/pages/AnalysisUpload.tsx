@@ -452,38 +452,7 @@ export default function AnalysisUpload() {
         }
         
         // Use real progress data from backend
-        if (analysisStatus === 'processing') {
-          // Update with real backend progress
-          const backendStep = data.current_step || 'pose_estimation'
-          const backendProgress = data.step_progress || 0
-          const backendMessage = data.step_message || 'Processing...'
-          
-          // Map backend step names to frontend step types
-          const stepMapping: Record<string, ProcessingStep> = {
-            'pose_estimation': 'pose_estimation',
-            '3d_lifting': '3d_lifting',
-            'metrics_calculation': 'metrics_calculation',
-            'report_generation': 'report_generation'
-          }
-          
-          const mappedStep = stepMapping[backendStep] || 'pose_estimation'
-          setCurrentStep(mappedStep)
-          setStepProgress(backendProgress)
-          setStepMessage(backendMessage)
-          
-          console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
-          
-          // For Step 4, poll more frequently to show detailed progress
-          if (mappedStep === 'report_generation') {
-            if (backendProgress >= 98) {
-              schedulePoll(500) // Poll every 500ms when finalizing (98-100%)
-            } else {
-              schedulePoll(1000) // Poll every 1s during Step 4 (95-98%)
-            }
-          } else {
-            schedulePoll(2000)
-          }
-        } else if (analysisStatus === 'completed') {
+        if (analysisStatus === 'completed') {
           // CRITICAL: Only mark as completed if:
           // 1. Metrics exist AND have meaningful data
           // 2. All 4 steps are marked as completed in steps_completed
@@ -510,33 +479,6 @@ export default function AnalysisUpload() {
             currentStep: data.current_step
           })
           
-          // Check if analysis is stuck (in report_generation with high progress but missing metrics/steps)
-          const isStuck = (
-            data.current_step === 'report_generation' &&
-            data.step_progress >= 95 &&
-            (!hasValidMetrics || !allStepsComplete) &&
-            (Date.now() - new Date(data.updated_at || data.created_at || 0).getTime()) > 60000 // Stuck for >1 minute
-          )
-          
-          if (isStuck) {
-            // Try to auto-fix stuck analysis
-            console.log('⚠️ Detected stuck analysis, attempting auto-fix...')
-            try {
-              const fixResponse = await fetch(`${API_URL}/api/v1/analysis/${id}/force-complete`, { method: 'POST' })
-              if (fixResponse.ok) {
-                const fixData = await fixResponse.json()
-                if (fixData.status === 'success') {
-                  console.log('✅ Auto-fixed stuck analysis, re-checking status...')
-                  // Re-poll immediately to get updated status
-                  schedulePoll(500)
-                  return
-                }
-              }
-            } catch (fixErr) {
-              console.warn('⚠️ Auto-fix attempt failed:', fixErr)
-            }
-          }
-          
           if (hasValidMetrics && allStepsComplete) {
             setStatus('completed')
             setCurrentStep('report_generation')
@@ -561,6 +503,100 @@ export default function AnalysisUpload() {
               setStepMessage(data.step_message || 'Saving analysis results to database...')
             }
             schedulePoll(1000)
+          }
+        } else if (analysisStatus === 'processing') {
+          // CRITICAL: Handle case where stepProgress=100 but status is still 'processing'
+          // This happens when backend says "complete" but database update hasn't finished
+          const backendStep = data.current_step || 'pose_estimation'
+          const backendProgress = data.step_progress || 0
+          const backendMessage = data.step_message || 'Processing...'
+          
+          // Map backend step names to frontend step types
+          const stepMapping: Record<string, ProcessingStep> = {
+            'pose_estimation': 'pose_estimation',
+            '3d_lifting': '3d_lifting',
+            'metrics_calculation': 'metrics_calculation',
+            'report_generation': 'report_generation'
+          }
+          
+          const mappedStep = stepMapping[backendStep] || 'pose_estimation'
+          setCurrentStep(mappedStep)
+          setStepProgress(backendProgress)
+          setStepMessage(backendMessage)
+          
+          // SPECIAL CASE: If stepProgress=100 and we're in report_generation, check if we should auto-complete
+          if (mappedStep === 'report_generation' && backendProgress === 100) {
+            const hasValidMetrics = data.metrics && 
+              Object.keys(data.metrics).length > 0 &&
+              (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
+            
+            const stepsCompleted = data.steps_completed || {}
+            const allStepsComplete = (
+              stepsCompleted.step_1_pose_estimation === true &&
+              stepsCompleted.step_2_3d_lifting === true &&
+              stepsCompleted.step_3_metrics_calculation === true &&
+              stepsCompleted.step_4_report_generation === true
+            )
+            
+            // If we have valid metrics and all steps complete, but status is still 'processing',
+            // the backend database update may have failed - try to auto-fix
+            if (hasValidMetrics && allStepsComplete) {
+              console.log('⚠️ Step 4 shows 100% with valid data but status is still processing - attempting auto-fix...')
+              try {
+                const fixResponse = await fetch(`${API_URL}/api/v1/analysis/${id}/force-complete`, { method: 'POST' })
+                if (fixResponse.ok) {
+                  const fixData = await fixResponse.json()
+                  if (fixData.status === 'success') {
+                    console.log('✅ Auto-fixed stuck analysis, re-checking status...')
+                    schedulePoll(500)
+                    return
+                  }
+                }
+              } catch (fixErr) {
+                console.warn('⚠️ Auto-fix attempt failed:', fixErr)
+              }
+              
+              // Even if auto-fix fails, if we have valid data, mark as completed locally
+              // This prevents the UI from being stuck forever
+              console.log('✅ Marking as completed locally (backend status update may be delayed)')
+              setStatus('completed')
+              setStepProgress(100)
+              setStepMessage('Analysis complete! Reports ready.')
+              clearPollTimeout()
+              return
+            }
+            
+            // If stepProgress=100 but we don't have valid metrics/steps, check if stuck
+            const timeSinceUpdate = Date.now() - new Date(data.updated_at || data.created_at || 0).getTime()
+            if (timeSinceUpdate > 30000) { // Stuck for >30 seconds
+              console.log('⚠️ Analysis stuck at 100% for >30s, attempting auto-fix...')
+              try {
+                const fixResponse = await fetch(`${API_URL}/api/v1/analysis/${id}/force-complete`, { method: 'POST' })
+                if (fixResponse.ok) {
+                  const fixData = await fixResponse.json()
+                  if (fixData.status === 'success') {
+                    console.log('✅ Auto-fixed stuck analysis, re-checking status...')
+                    schedulePoll(500)
+                    return
+                  }
+                }
+              } catch (fixErr) {
+                console.warn('⚠️ Auto-fix attempt failed:', fixErr)
+              }
+            }
+          }
+          
+          console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
+          
+          // For Step 4, poll more frequently to show detailed progress
+          if (mappedStep === 'report_generation') {
+            if (backendProgress >= 98) {
+              schedulePoll(500) // Poll every 500ms when finalizing (98-100%)
+            } else {
+              schedulePoll(1000) // Poll every 1s during Step 4 (95-98%)
+            }
+          } else {
+            schedulePoll(2000)
           }
         } else if (analysisStatus === 'failed') {
           setStatus('failed')
@@ -1034,7 +1070,7 @@ export default function AnalysisUpload() {
                     {currentStep === 'report_generation' && 'Step 4 of 4'}
                   </span>
                   <span className="overall-progress-percent">
-                    {status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98
+                    {status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98 && stepProgress < 100
                       ? '99%' // Cap at 99% when finalizing to show it's not truly complete
                       : `${stepProgress}%`}
                   </span>
@@ -1043,7 +1079,7 @@ export default function AnalysisUpload() {
                   <div 
                     className="overall-progress-bar" 
                     style={{ 
-                      width: `${status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98
+                      width: `${status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98 && stepProgress < 100
                         ? 99 // Cap visual progress at 99% when finalizing
                         : stepProgress}%` 
                     }}
@@ -1061,7 +1097,7 @@ export default function AnalysisUpload() {
                       Est. remaining: {Math.floor(((Date.now() - startTime) / stepProgress) * (100 - stepProgress) / 1000)}s
                     </span>
                   )}
-                  {((status === 'processing' || (status as UploadStatus) === 'completed') && currentStep === 'report_generation' && stepProgress >= 98) && (
+                  {status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98 && stepProgress < 100 && (
                     <span className="finalizing-indicator">
                       Finalizing...
                     </span>

@@ -3251,6 +3251,11 @@ async def get_analysis(
             )
         
         logger.info(f"[{request_id}] Analysis retrieved successfully", extra={"analysis_id": analysis_id, "status": analysis.get("status")})
+        
+        # Ensure steps_completed exists (default to empty dict if missing)
+        if 'steps_completed' not in analysis or analysis.get('steps_completed') is None:
+            analysis['steps_completed'] = {}
+        
         return AnalysisDetailResponse(**analysis)
     
     except HTTPException:

@@ -101,6 +101,7 @@ class AnalysisDetailResponse(BaseModel):
     step_progress: int = Field(0, ge=0, le=100)
     step_message: Optional[str]
     metrics: Optional[Dict[str, Any]]
+    steps_completed: Optional[Dict[str, bool]] = Field(None, description="Track which processing steps have completed")
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
     # Video quality validation fields
