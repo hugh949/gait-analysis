@@ -163,11 +163,17 @@ async def upload_video(
     Returns:
         JSONResponse with analysis_id and status
     """
-    # CRITICAL: Wrap entire function in try/except to catch ANY error
+    # CRITICAL: Define all variables BEFORE try block to prevent NameError in exception handlers
+    request_id = str(uuid.uuid4())[:8]
+    upload_request_start = time.time()
+    tmp_path = None
+    video_url = None
+    file_size = 0
+    analysis_id = None
+    patient_id_val = patient_id  # Store for use in exception handlers
+    
     try:
-        # MINIMAL START - just get request_id and log
-        request_id = str(uuid.uuid4())[:8]
-        upload_request_start = time.time()
+        # MINIMAL START - just log
         
         logger.info(f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========")
         logger.info(f"[{request_id}] Filename: {file.filename if file else None}")
@@ -230,9 +236,7 @@ async def upload_video(
         # Consider implementing chunked uploads or direct blob storage uploads for larger files
         MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
         MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024  # 50MB - recommended max to avoid timeout
-        file_size = 0
-        tmp_path: Optional[str] = None
-        video_url: Optional[str] = None
+        # Note: file_size, tmp_path, video_url already defined above
         
         try:
             # CRITICAL: Check file size early and warn if it might timeout
@@ -371,7 +375,7 @@ async def upload_video(
                     }
                 )
             
-            # Generate analysis ID
+            # Generate analysis ID (already defined above, but assign here)
             analysis_id = str(uuid.uuid4())
             logger.info(f"[{request_id}] Generated analysis ID: {analysis_id}")
             
@@ -871,38 +875,23 @@ async def upload_video(
                 "created_at": datetime.utcnow().isoformat()
             })
     
+    except HTTPException:
+        # Let FastAPI handle HTTPException - don't intercept
+        raise
     except (ValidationError, VideoProcessingError, StorageError, DatabaseError) as e:
-        # Convert custom exceptions to HTTP exceptions
+        # Convert custom exceptions to HTTP exceptions - let global handler process
         logger.error(
             f"[{request_id}] Upload failed: {e.error_code} - {e.message}",
             extra={"error_code": e.error_code, "details": e.details},
             exc_info=True
         )
+        # Raise HTTPException so global handler can process it
         http_exc = gait_error_to_http(e)
-        return JSONResponse(
-            status_code=http_exc.status_code,
-            content={
-                "error": e.error_code,
-                "message": e.message,
-                "details": e.details
-            }
-        )
-    except HTTPException as http_exc:
-        # Return HTTPException as JSONResponse
-        return JSONResponse(
-            status_code=http_exc.status_code,
-            content={"detail": http_exc.detail}
-        )
+        raise http_exc
     except Exception as e:
-        # Catch-all for unexpected errors - log EVERYTHING
+        # Catch-all for unexpected errors - log and raise HTTPException
         error_type = type(e).__name__
         error_msg = str(e)
-        error_traceback = None
-        try:
-            import traceback
-            error_traceback = traceback.format_exc()
-        except:
-            pass
         
         # Log with maximum detail
         try:
@@ -911,73 +900,37 @@ async def upload_video(
                 extra={
                     "error_type": error_type,
                     "error_message": error_msg,
-                    "error_traceback": error_traceback,
                     "filename": file.filename if file else None,
-                    "patient_id": patient_id
+                    "patient_id": patient_id_val
                 },
                 exc_info=True
             )
-        except:
+        except Exception as log_error:
             # Even logging failed - use print
             print(f"CRITICAL ERROR [{request_id}]: {error_type}: {error_msg}")
-            if error_traceback:
-                print(error_traceback)
+            print(f"Logging also failed: {log_error}")
         
-        # Return detailed error as JSONResponse
-        return JSONResponse(
+        # Raise HTTPException so global handler can process it
+        raise HTTPException(
             status_code=500,
-            content={
-                "error": "INTERNAL_SERVER_ERROR",
-                "message": f"An unexpected error occurred: {error_type}: {error_msg}",
-                "details": {
-                    "error_type": error_type,
-                    "error_message": error_msg,
-                    "request_id": request_id
-                }
-            }
-        )
-    except Exception as outer_error:
-        # Catch ANY error that wasn't caught above - this is the ultimate safety net
-        error_type = type(outer_error).__name__
-        error_msg = str(outer_error)
-        request_id = getattr(outer_error, 'request_id', 'unknown')
-        try:
-            import traceback
-            error_traceback = traceback.format_exc()
-        except:
-            error_traceback = None
-        
-        logger.critical(
-            f"[{request_id}] ❌❌❌ CRITICAL: Unhandled exception in upload_video ❌❌❌",
-            extra={
-                "error_type": error_type,
-                "error_message": error_msg,
-                "error_traceback": error_traceback
-            },
-            exc_info=True
-        )
-        
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "INTERNAL_SERVER_ERROR",
-                "message": f"Upload failed: {error_type}: {error_msg}",
-                "details": {
-                    "error_type": error_type,
-                    "request_id": request_id
-                }
-            }
+            detail=f"Upload failed: {error_type}: {error_msg}"
         )
     
     finally:
         # Clean up temp file only if it wasn't used for processing
-        if tmp_path and os.path.exists(tmp_path) and video_url and not os.path.exists(video_url):
-            # Only clean up if video_url is not the same as tmp_path (i.e., not mock mode)
-            try:
-                os.unlink(tmp_path)
-                logger.debug(f"[{request_id}] Cleaned up unused temp file")
-            except OSError as e:
-                logger.warning(f"[{request_id}] Failed to clean up temp file in finally: {e}")
+        # Use try/except to handle case where variables might not be set
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                # Only clean up if video_url is not the same as tmp_path (i.e., not mock mode)
+                if video_url and video_url != tmp_path and not os.path.exists(video_url):
+                    try:
+                        os.unlink(tmp_path)
+                        logger.debug(f"[{request_id}] Cleaned up unused temp file")
+                    except OSError as e:
+                        logger.warning(f"[{request_id}] Failed to clean up temp file in finally: {e}")
+        except Exception as cleanup_error:
+            # Don't let cleanup errors mask original error
+            logger.warning(f"[{request_id}] Error during cleanup: {cleanup_error}")
 
 
 async def process_analysis_azure(
