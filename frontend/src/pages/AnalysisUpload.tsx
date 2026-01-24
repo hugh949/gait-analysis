@@ -51,9 +51,17 @@ export default function AnalysisUpload() {
   } | null>(null)
   const navigate = useNavigate()
   const xhrRef = useRef<XMLHttpRequest | null>(null)
-  const pollingIntervalRef = useRef<number | null>(null)
-  const progressRef = useRef<number>(0) // Track progress in ref for closure access
+  const pollTimeoutRef = useRef<number | null>(null) // setTimeout ID for any scheduled poll (including retries)
+  const progressRef = useRef<number>(0)
+  const lastIndeterminateProgressRef = useRef<number>(0) // throttle indeterminate updates
   const [startTime] = useState<number>(Date.now())
+
+  const clearPollTimeout = () => {
+    if (pollTimeoutRef.current != null) {
+      window.clearTimeout(pollTimeoutRef.current)
+      pollTimeoutRef.current = null
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -119,62 +127,36 @@ export default function AnalysisUpload() {
       console.log('Creating XHR request...')
       const xhr = new XMLHttpRequest()
 
-      let lastProgressUpdate = Date.now()
-      let progressCheckInterval: number | null = null
-
       // Progress event handler
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable && e.total > 0) {
           const percentComplete = (e.loaded / e.total) * 100
-          const elapsed = Date.now() - lastProgressUpdate
-          console.log(`Upload progress: ${percentComplete.toFixed(1)}% (${(e.loaded / 1024 / 1024).toFixed(2)} MB / ${(e.total / 1024 / 1024).toFixed(2)} MB) - ${(elapsed / 1000).toFixed(1)}s since last update`)
           const newProgress = Math.max(percentComplete, 1)
-          progressRef.current = newProgress // Update ref for closure access
-          setProgress(newProgress) // Ensure at least 1% is shown
-          lastProgressUpdate = Date.now()
-          // Clear any stuck upload error if we're making progress
-          if (error && error.includes('stuck')) {
-            setError(null)
-          }
+          progressRef.current = newProgress
+          setProgress(newProgress)
         } else {
-          // If length not computable, show indeterminate progress
-          // Update progress to show activity (increment slowly)
-          const currentProgress = progressRef.current
-          if (currentProgress < 50) {
-            // Gradually increase progress to show activity
-            const newProgress = Math.min(currentProgress + 2, 50)
-            progressRef.current = newProgress
-            setProgress(newProgress)
+          // Length not computable: throttle updates to once per 400ms, ramp up to 50%
+          const now = Date.now()
+          if (now - lastIndeterminateProgressRef.current >= 400) {
+            lastIndeterminateProgressRef.current = now
+            const current = progressRef.current
+            if (current < 50) {
+              const next = Math.min(current + 2, 50)
+              progressRef.current = next
+              setProgress(next)
+            }
           }
-          console.log(`Upload in progress (size unknown) - showing ${progressRef.current}%`)
-          lastProgressUpdate = Date.now()
         }
       })
 
-      // Load start - show progress immediately
       xhr.upload.addEventListener('loadstart', () => {
-        console.log('Upload started - connection established')
-        setProgress(5) // Show 5% immediately when upload starts
-        lastProgressUpdate = Date.now()
-        
-        // Monitor for stuck uploads - DISABLED: Too many false positives
-        // The backend may take time to process/validate files before responding
-        // XHR timeout (10 minutes) will catch truly stuck uploads
-        // progressCheckInterval = setInterval(() => {
-        //   // Disabled - causes false positives when backend is processing
-        // }, 10000)
+        progressRef.current = 5
+        setProgress(5)
+        lastIndeterminateProgressRef.current = Date.now()
       })
 
       const uploadPromise = new Promise<string>((resolve, reject) => {
         xhr.onload = () => {
-          if (progressCheckInterval) {
-            clearInterval(progressCheckInterval)
-            progressCheckInterval = null
-          }
-          // Clear any stuck upload error on successful response
-          if (error && error.includes('stuck')) {
-            setError(null)
-          }
           console.log('Upload response received. Status:', xhr.status)
           if (xhr.status === 200) {
             try {
@@ -224,11 +206,6 @@ export default function AnalysisUpload() {
         }
 
         xhr.onerror = () => {
-          if (progressCheckInterval) {
-            clearInterval(progressCheckInterval)
-            progressCheckInterval = null
-          }
-          
           const actualUrl = API_URL === '' ? window.location.origin : API_URL
           const fullUrl = `${actualUrl}/api/v1/analysis/upload`
           
@@ -276,24 +253,11 @@ export default function AnalysisUpload() {
         }
 
         xhr.ontimeout = () => {
-          if (progressCheckInterval) {
-            clearInterval(progressCheckInterval)
-            progressCheckInterval = null
-          }
           console.error('Upload timeout after 10 minutes')
-          // Clear stuck error message if it was set
-          if (error && error.includes('stuck')) {
-            setError(null)
-          }
-          reject(new Error(`Upload timeout - Server took too long to respond (10 minutes).\n\nThis may happen with very large files or when the backend is processing your file.\n\nFile size: ${(file.size / 1024 / 1024).toFixed(2)} MB\n\nPlease try:\n1. Wait a few more minutes - the backend may still be processing\n2. Try with a smaller file\n3. Check backend logs for processing status\n4. The upload may have succeeded - check your analysis list`))
+          reject(new Error(`Upload timeout (10 minutes). The server may still be processing your file.\n\nFile size: ${(file.size / 1024 / 1024).toFixed(2)} MB.\n\nTry: 1) Check "View Reports" – upload may have succeeded. 2) Use a smaller file (<50 MB). 3) Retry.`))
         }
 
         xhr.onabort = () => {
-          if (progressCheckInterval) {
-            clearInterval(progressCheckInterval)
-            progressCheckInterval = null
-          }
-          console.error('Upload aborted')
           reject(new Error('Upload was cancelled'))
         }
 
@@ -308,9 +272,8 @@ export default function AnalysisUpload() {
         console.log('Full URL will be:', API_URL === '' ? `${window.location.origin}${uploadUrl}` : uploadUrl)
         
         xhr.open('POST', uploadUrl)
-        xhr.timeout = 600000 // 10 minutes timeout for large files
-        // Note: Stuck upload detection disabled - XHR timeout will catch truly stuck uploads
-        xhrRef.current = xhr // Store for cancel functionality
+        xhr.timeout = 600000 // 10 minutes
+        xhrRef.current = xhr
         xhr.send(formData)
       })
 
@@ -324,34 +287,14 @@ export default function AnalysisUpload() {
       // Store analysis ID in localStorage for resume capability
       localStorage.setItem('lastAnalysisId', id)
 
-      // Wait a moment for the analysis to be fully written to the database
-      // This prevents race conditions where the frontend polls before the backend has finished creating the record
-      await new Promise(resolve => setTimeout(resolve, 500)) // 500ms delay
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-        // Poll for analysis status
       pollAnalysisStatus(id)
-      
-      // Cleanup on unmount
-      return () => {
-        if (xhrRef.current) {
-          xhrRef.current.abort()
-          xhrRef.current = null
-        }
-        if (pollingIntervalRef.current) {
-          window.clearInterval(pollingIntervalRef.current)
-          pollingIntervalRef.current = null
-        }
-      }
     } catch (err: any) {
       console.error('Upload error:', err)
-      // Clean up progress check interval if it exists
-      if (progressCheckInterval) {
-        clearInterval(progressCheckInterval)
-        progressCheckInterval = null
-      }
       setError(err.message || 'Upload failed. Please try again.')
       setStatus('failed')
-      progressRef.current = 0 // Update ref
+      progressRef.current = 0
       setProgress(0)
     }
   }
@@ -359,95 +302,43 @@ export default function AnalysisUpload() {
   const pollAnalysisStatus = async (id: string) => {
     let consecutiveErrors = 0
     let consecutive404s = 0
-    const maxConsecutiveErrors = 5 // Increased for better resilience
-    const maxConsecutive404s = 5 // Allow multiple 404s initially (analysis might be creating)
+    const maxConsecutiveErrors = 5
+    const maxConsecutive404s = 6
     const startTime = Date.now()
-    const initialGracePeriod = 10000 // Increased to 10 seconds - allows multi-worker file sync to complete
+    const initialGracePeriod = 15000 // 15s – backend may take time to persist analysis
     
-    // CRITICAL: Initial delay to allow file write and sync in multi-worker environment
-    // In multi-worker setups, the file needs time to be written, synced, and become visible
-    // to other workers. 2 seconds gives enough time for filesystem operations.
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    await new Promise(resolve => setTimeout(resolve, 3000)) // 3s initial delay
+    
+    const schedulePoll = (delayMs: number) => {
+      clearPollTimeout()
+      pollTimeoutRef.current = window.setTimeout(poll, delayMs)
+    }
     
     const poll = async () => {
       try {
-        const pollStartTime = Date.now()
         const pollUrl = `${API_URL}/api/v1/analysis/${id}`
-        const timeSinceUpload = pollStartTime - startTime
-        
-        // DIAGNOSTIC: Log every poll attempt
-        console.error(`🔍🔍🔍 FRONTEND POLL DIAGNOSTIC 🔍🔍🔍`)
-        console.error(`🔍 Poll attempt for analysis: ${id}`)
-        console.error(`🔍 Poll URL: ${pollUrl}`)
-        console.error(`🔍 Time since upload: ${timeSinceUpload}ms (${(timeSinceUpload/1000).toFixed(1)}s)`)
-        console.error(`🔍 Consecutive 404s: ${consecutive404s}/${maxConsecutive404s}`)
-        console.error(`🔍 Consecutive errors: ${consecutiveErrors}/${maxConsecutiveErrors}`)
-        console.error(`🔍 Current step: ${currentStep}, Progress: ${stepProgress}%`)
-        
         const response = await fetch(pollUrl)
-        
-        // DIAGNOSTIC: Log response details
-        console.error(`🔍 Response status: ${response.status}`)
-        console.error(`🔍 Response statusText: ${response.statusText}`)
-        console.error(`🔍 Response headers:`, Object.fromEntries(response.headers.entries()))
         
         if (response.status === 404) {
           const timeSinceStart = Date.now() - startTime
-          
-          // DIAGNOSTIC: Detailed 404 logging
-          console.error(`🔍❌❌❌ 404 ERROR DIAGNOSTIC ❌❌❌`)
-          console.error(`🔍 Analysis ID: ${id}`)
-          console.error(`🔍 Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
-          console.error(`🔍 Within grace period: ${timeSinceStart < initialGracePeriod}`)
-          console.error(`🔍 Grace period: ${initialGracePeriod}ms (${(initialGracePeriod/1000).toFixed(1)}s)`)
-          console.error(`🔍 Consecutive 404s: ${consecutive404s + 1}/${maxConsecutive404s}`)
-          console.error(`🔍 Poll URL: ${pollUrl}`)
-          console.error(`🔍 Current step: ${currentStep}, Progress: ${stepProgress}%`)
-          
-          // In the first few seconds after upload, 404s are more likely due to timing
-          // Retry a few times before giving up
           if (timeSinceStart < initialGracePeriod) {
             consecutive404s++
-            console.warn(`Analysis ${id} not found (attempt ${consecutive404s}/${maxConsecutive404s}) - may still be creating...`)
-            
             if (consecutive404s >= maxConsecutive404s) {
-              // After grace period and max retries, give up
-              console.error(`❌❌❌ ANALYSIS NOT FOUND AFTER ${maxConsecutive404s} ATTEMPTS ❌❌❌`)
-              console.error(`Analysis ID: ${id}`)
-              console.error(`Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
-              console.error(`Poll URL: ${pollUrl}`)
-              console.error(`This indicates the analysis was not created or was lost during processing.`)
-              console.error(`Check backend logs for diagnostic messages starting with 🔍🔍🔍`)
               setStatus('failed')
-              setError(`Analysis not found after ${maxConsecutive404s} attempts (${(timeSinceStart/1000).toFixed(1)}s after upload).\n\nDiagnostic Info:\n- Analysis ID: ${id}\n- Time since upload: ${(timeSinceStart/1000).toFixed(1)}s\n- This may happen if:\n  1. The server restarted during processing\n  2. Multi-worker file sync issue\n  3. Analysis was lost during processing\n\nPlease check backend logs for detailed diagnostic messages (look for 🔍🔍🔍) and upload your video again.`)
-              setAnalysisId(null) // Clear the stale ID
-              return // Stop polling
+              setError(`Analysis not found after ${maxConsecutive404s} attempts. The server may still be creating it. Try again in a moment or re-upload.`)
+              setAnalysisId(null)
+              return
             }
-            
-            // Retry with exponential backoff (shorter delays initially)
-            const retryDelay = 500 * consecutive404s
-            console.error(`🔍 Retrying in ${retryDelay}ms (attempt ${consecutive404s + 1})`)
-            setTimeout(poll, retryDelay) // 500ms, 1000ms, 1500ms, 2000ms, 2500ms
+            const retryDelay = 600 * consecutive404s
+            schedulePoll(retryDelay)
             return
-          } else {
-            // After grace period, 404 is more likely a real error
-            console.error(`❌❌❌ ANALYSIS NOT FOUND AFTER GRACE PERIOD ❌❌❌`)
-            console.error(`Analysis ID: ${id}`)
-            console.error(`Time since upload: ${timeSinceStart}ms (${(timeSinceStart/1000).toFixed(1)}s)`)
-            console.error(`Grace period: ${initialGracePeriod}ms (${(initialGracePeriod/1000).toFixed(1)}s)`)
-            console.error(`Poll URL: ${pollUrl}`)
-            console.error(`Current step: ${currentStep}, Progress: ${stepProgress}%`)
-            console.error(`This indicates the analysis was lost during processing.`)
-            console.error(`Check backend logs for diagnostic messages starting with 🔍🔍🔍`)
-            console.warn(`Analysis ${id} not found after grace period - likely lost after container restart`)
-            setStatus('failed')
-            setError(`Analysis not found after ${(timeSinceStart/1000).toFixed(1)}s (grace period: ${(initialGracePeriod/1000).toFixed(1)}s).\n\nDiagnostic Info:\n- Analysis ID: ${id}\n- Last known step: ${currentStep}\n- Last known progress: ${stepProgress}%\n- This likely indicates:\n  1. Analysis was lost during processing\n  2. Multi-worker file sync issue\n  3. Server restart during processing\n\nPlease check backend logs for detailed diagnostic messages (look for 🔍🔍🔍) and upload your video again.`)
-            setAnalysisId(null) // Clear the stale ID
-            return // Stop polling
           }
+          setStatus('failed')
+          setError(`Analysis not found (${(timeSinceStart / 1000).toFixed(0)}s after upload). It may have been lost. Please try uploading again.`)
+          setAnalysisId(null)
+          return
         }
         
-        // Reset 404 counter on success
         consecutive404s = 0
         
         if (!response.ok) {
@@ -455,8 +346,7 @@ export default function AnalysisUpload() {
           if (consecutiveErrors >= maxConsecutiveErrors) {
             throw new Error(`Failed to fetch analysis status after ${maxConsecutiveErrors} attempts: ${response.statusText}`)
           }
-          // Retry with exponential backoff
-          setTimeout(poll, 3000 * consecutiveErrors)
+          schedulePoll(3000 * consecutiveErrors)
           return
         }
 
@@ -499,12 +389,10 @@ export default function AnalysisUpload() {
           
           console.log(`Progress update: ${backendStep} - ${backendProgress}% - ${backendMessage}`)
           
-          // Continue polling - more frequent during processing for better UX
-          // If we're in report_generation step and progress is high, poll more frequently
           if (mappedStep === 'report_generation' && backendProgress >= 95) {
-            pollingIntervalRef.current = window.setTimeout(poll, 1000) // Poll every 1 second near completion
+            schedulePoll(1000)
           } else {
-            pollingIntervalRef.current = window.setTimeout(poll, 2000) // Poll every 2 seconds normally
+            schedulePoll(2000)
           }
         } else if (analysisStatus === 'completed') {
           // CRITICAL: Only mark as completed if metrics exist AND have meaningful data
@@ -518,21 +406,14 @@ export default function AnalysisUpload() {
             setCurrentStep('report_generation')
             setStepProgress(100)
             setStepMessage(data.step_message || 'Analysis complete! Reports ready.')
-            // Stop polling
-            if (pollingIntervalRef.current) {
-              window.clearTimeout(pollingIntervalRef.current)
-              pollingIntervalRef.current = null
-            }
-            console.log('✅ Analysis truly completed with valid metrics')
+            clearPollTimeout()
+            console.log('✅ Analysis completed with valid metrics')
           } else {
-            // Status says completed but no valid metrics - still processing
-            console.warn('⚠️ Status is completed but no valid metrics - treating as processing')
             setStatus('processing')
             setCurrentStep('report_generation')
             setStepProgress(data.step_progress || 98)
             setStepMessage(data.step_message || 'Saving analysis results to database...')
-            // Poll more frequently when finalizing
-            pollingIntervalRef.current = window.setTimeout(poll, 1000)
+            schedulePoll(1000)
           }
         } else if (analysisStatus === 'failed') {
           setStatus('failed')
@@ -543,16 +424,13 @@ export default function AnalysisUpload() {
       } catch (err: any) {
         console.error('Polling error:', err)
         consecutiveErrors++
-        
         if (consecutiveErrors >= maxConsecutiveErrors) {
           setStatus('failed')
           setError(`Failed to get analysis status after ${maxConsecutiveErrors} attempts. ${err.message || 'Please try uploading again.'}`)
-          setAnalysisId(null) // Clear the stale ID
-          return // Stop polling
+          setAnalysisId(null)
+          return
         }
-        
-        // Continue polling on error (analysis might still be processing)
-        setTimeout(poll, 3000 * consecutiveErrors) // Exponential backoff
+        schedulePoll(3000 * consecutiveErrors)
       }
     }
 
@@ -561,17 +439,11 @@ export default function AnalysisUpload() {
   }
 
   const handleCancel = async () => {
-    // Cancel upload if in progress
     if (xhrRef.current && (status === 'uploading' || status === 'processing')) {
       xhrRef.current.abort()
       xhrRef.current = null
     }
-    
-    // Stop polling
-    if (pollingIntervalRef.current) {
-      window.clearTimeout(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
-    }
+    clearPollTimeout()
     
     // Clear localStorage
     if (analysisId) {
@@ -735,15 +607,10 @@ export default function AnalysisUpload() {
     checkExistingAnalysis()
   }, [])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (xhrRef.current) {
-        xhrRef.current.abort()
-      }
-      if (pollingIntervalRef.current) {
-        window.clearTimeout(pollingIntervalRef.current)
-      }
+      if (xhrRef.current) xhrRef.current.abort()
+      clearPollTimeout()
     }
   }, [])
 
