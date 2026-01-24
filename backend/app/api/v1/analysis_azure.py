@@ -134,12 +134,12 @@ if db_service is None:
 
 @router.post(
     "/upload",
-    response_model=AnalysisResponse,
+    response_class=JSONResponse,  # Use JSONResponse instead of response_model to avoid serialization issues
     responses={
-        400: {"model": ErrorResponse, "description": "Validation error"},
-        413: {"model": ErrorResponse, "description": "File too large"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-        503: {"model": ErrorResponse, "description": "Service unavailable"}
+        400: {"description": "Validation error"},
+        413: {"description": "File too large"},
+        500: {"description": "Internal server error"},
+        503: {"description": "Service unavailable"}
     }
 )
 async def upload_video(
@@ -150,7 +150,7 @@ async def upload_video(
     fps: float = Query(30.0, gt=0, le=120, description="Video frames per second"),
     request: Request = None,
     background_tasks: BackgroundTasks = None
-) -> AnalysisResponse:
+) -> JSONResponse:
     """
     Upload video for gait analysis using Azure native services
     
@@ -199,9 +199,9 @@ async def upload_video(
     # Validate database service is available
     if db_service is None:
         logger.error(f"[{request_id}] Database service not available")
-        raise HTTPException(
+        return JSONResponse(
             status_code=503,
-            detail={
+            content={
                 "error": "SERVICE_UNAVAILABLE",
                 "message": "Database service is not available",
                 "details": {}
@@ -211,7 +211,10 @@ async def upload_video(
     # Validate file is provided
     if not file or not file.filename:
         logger.error(f"[{request_id}] No file provided in upload request")
-        raise ValidationError("No file provided", field="file")
+        return JSONResponse(
+            status_code=400,
+            content={"error": "VALIDATION_ERROR", "message": "No file provided", "field": "file"}
+        )
     
     # Validate file extension
     file_ext = Path(file.filename).suffix.lower()
@@ -221,10 +224,14 @@ async def upload_video(
             f"[{request_id}] Unsupported file format: {file_ext}",
             extra={"filename": file.filename, "extension": file_ext}
         )
-        raise ValidationError(
-            f"Unsupported file format: {file_ext}. Supported formats: {', '.join(SUPPORTED_FORMATS)}",
-            field="file",
-            details={"extension": file_ext, "supported": SUPPORTED_FORMATS}
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "VALIDATION_ERROR",
+                "message": f"Unsupported file format: {file_ext}. Supported formats: {', '.join(SUPPORTED_FORMATS)}",
+                "field": "file",
+                "details": {"extension": file_ext, "supported": SUPPORTED_FORMATS}
+            }
         )
     
     # Validate file size (max 500MB)
@@ -249,7 +256,15 @@ async def upload_video(
             logger.debug(f"[{request_id}] Created temp file: {tmp_path}")
         except OSError as e:
             logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
-            raise StorageError("Failed to create temporary file for upload", details={"error": str(e)})
+            logger.error(f"[{request_id}] Failed to create temp file: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "STORAGE_ERROR",
+                    "message": "Failed to create temporary file for upload",
+                    "details": {"error": str(e)}
+                }
+            )
         
         # Read file in chunks with size validation
         # CRITICAL: Use smaller chunks for large files to prevent memory issues
@@ -290,10 +305,15 @@ async def upload_video(
                         f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})",
                         extra={"file_size": file_size, "max_size": MAX_FILE_SIZE}
                     )
-                    raise ValidationError(
-                        f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
-                        field="file",
-                        details={"file_size": file_size, "max_size": MAX_FILE_SIZE}
+                    logger.error(f"[{request_id}] File too large: {file_size} bytes (max: {MAX_FILE_SIZE})")
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": "VALIDATION_ERROR",
+                            "message": f"File too large: {file_size / (1024*1024):.2f}MB. Maximum size: {MAX_FILE_SIZE / (1024*1024)}MB",
+                            "field": "file",
+                            "details": {"file_size": file_size, "max_size": MAX_FILE_SIZE}
+                        }
                     )
                     
                     tmp_file.close()
@@ -332,8 +352,6 @@ async def upload_video(
                             f"Azure App Service has a 230-second request timeout. "
                             f"Consider using smaller files (<50MB) to avoid timeout issues."
                         )
-        except ValidationError:
-            raise  # Re-raise validation errors
         except Exception as e:
             tmp_file.close()
             if tmp_path and os.path.exists(tmp_path):
@@ -342,14 +360,28 @@ async def upload_video(
                 except:
                     pass
             logger.error(f"[{request_id}] Error reading uploaded file: {e}", exc_info=True)
-            raise VideoProcessingError("Failed to read uploaded file", details={"error": str(e)})
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "VIDEO_PROCESSING_ERROR",
+                    "message": "Failed to read uploaded file",
+                    "details": {"error": str(e)}
+                }
+            )
         
         # Validate file is not empty
         if file_size == 0:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             logger.error(f"[{request_id}] Empty file uploaded")
-            raise ValidationError("Uploaded file is empty", field="file")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "VALIDATION_ERROR",
+                    "message": "Uploaded file is empty",
+                    "field": "file"
+                }
+            )
         
         # Generate analysis ID
         analysis_id = str(uuid.uuid4())
@@ -445,7 +477,15 @@ async def upload_video(
                     os.unlink(tmp_path)
                 except:
                     pass
-            raise StorageError("Failed to upload file to storage", details={"error": str(e)})
+            logger.error(f"[{request_id}] Error uploading to storage: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "STORAGE_ERROR",
+                    "message": "Failed to upload file to storage",
+                    "details": {"error": str(e)}
+                }
+            )
         
         # Store metadata in Azure SQL Database
         logger.error(f"[{request_id}] ========== CREATING ANALYSIS RECORD ==========")
@@ -497,7 +537,14 @@ async def upload_video(
             
             if not creation_success:
                 logger.error(f"[{request_id}] ❌❌❌ FAILED TO CREATE ANALYSIS RECORD ❌❌❌", extra={"analysis_id": analysis_id})
-                raise DatabaseError("Failed to create analysis record", details={"analysis_id": analysis_id})
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "error": "DATABASE_ERROR",
+                        "message": "Failed to create analysis record",
+                        "details": {"analysis_id": analysis_id}
+                    }
+                )
             
             logger.error(f"[{request_id}] ✅✅✅ ANALYSIS RECORD CREATED SUCCESSFULLY ✅✅✅")
             logger.info(
@@ -602,14 +649,19 @@ async def upload_video(
                 if not verification_passed:
                     # CRITICAL: Don't continue if verification fails - this causes "Analysis not found" errors
                     logger.error(f"[{request_id}] ❌❌❌ FAILING REQUEST: Analysis verification failed - cannot proceed ❌❌❌")
-                    raise DatabaseError(
-                        "Analysis was created but could not be verified as readable. This may indicate a file system sync issue.",
-                        details={
+                logger.error(f"[{request_id}] ❌ Analysis verification failed - returning error response")
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "error": "DATABASE_ERROR",
+                        "message": "Analysis was created but could not be verified as readable. This may indicate a file system sync issue.",
+                        "details": {
                             "analysis_id": analysis_id,
                             "verification_attempts": max_verification_attempts,
                             "diagnostic": "Analysis may have been lost during creation. Check backend logs for 🔍🔍🔍 diagnostic messages."
                         }
-                    )
+                    }
+                )
             
             logger.error(f"[{request_id}] ========== ANALYSIS RECORD CREATION COMPLETE ==========")
         except Exception as e:
@@ -620,7 +672,15 @@ async def upload_video(
                     os.unlink(tmp_path)
                 except:
                     pass
-            raise DatabaseError("Failed to create analysis record", details={"error": str(e)})
+            logger.error(f"[{request_id}] Exception creating analysis record: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "DATABASE_ERROR",
+                    "message": "Failed to create analysis record",
+                    "details": {"error": str(e)}
+                }
+            )
         
         # Process in background
         try:
@@ -792,7 +852,9 @@ async def upload_video(
                 })
             except:
                 pass
-            raise VideoProcessingError("Failed to schedule video analysis", details={"error": str(e)})
+            logger.error(f"[{request_id}] Failed to schedule video analysis: {e}", exc_info=True)
+            # Don't fail the upload - analysis is created, just log the error
+            # The analysis will remain in 'processing' status
         
         upload_total_duration = time.time() - upload_request_start
         logger.info(
@@ -813,13 +875,14 @@ async def upload_video(
             logger.warning(f"[{request_id}] ⚠️ Upload request took {upload_total_duration:.1f}s (approaching 230s Azure timeout)")
         
         # Return response - use string for status to avoid enum issues
-        return AnalysisResponse(
-            analysis_id=analysis_id,
-            status="processing",  # Use string instead of enum
-            message="Video uploaded successfully. Analysis in progress.",
-            patient_id=patient_id,
-            created_at=datetime.utcnow()
-        )
+        # Return JSONResponse directly (like simple endpoint) to avoid Pydantic serialization issues
+        return JSONResponse({
+            "analysis_id": analysis_id,
+            "status": "processing",
+            "message": "Video uploaded successfully. Analysis in progress.",
+            "patient_id": patient_id,
+            "created_at": datetime.utcnow().isoformat()
+        })
     
     except (ValidationError, VideoProcessingError, StorageError, DatabaseError) as e:
         # Convert custom exceptions to HTTP exceptions
@@ -828,9 +891,21 @@ async def upload_video(
             extra={"error_code": e.error_code, "details": e.details},
             exc_info=True
         )
-        raise gait_error_to_http(e)
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions
+        http_exc = gait_error_to_http(e)
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content={
+                "error": e.error_code,
+                "message": e.message,
+                "details": e.details
+            }
+        )
+    except HTTPException as http_exc:
+        # Return HTTPException as JSONResponse
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content={"detail": http_exc.detail}
+        )
     except Exception as e:
         # Catch-all for unexpected errors - log EVERYTHING
         error_type = type(e).__name__
@@ -861,10 +936,10 @@ async def upload_video(
             if error_traceback:
                 print(error_traceback)
         
-        # Return detailed error to help diagnose
-        raise HTTPException(
+        # Return detailed error as JSONResponse
+        return JSONResponse(
             status_code=500,
-            detail={
+            content={
                 "error": "INTERNAL_SERVER_ERROR",
                 "message": f"An unexpected error occurred: {error_type}: {error_msg}",
                 "details": {
