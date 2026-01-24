@@ -1072,11 +1072,7 @@ async def process_analysis_azure(
         
         # Download video from blob storage to temporary file with comprehensive error handling
         try:
-            if video_url.startswith('http') or video_url.startswith('https'):
-                # Real blob storage URL - download it
-                logger.debug(f"[{request_id}] Downloading video from URL: {video_url}")
-                video_path = await gait_service.download_video_from_url(video_url)
-            elif os.path.exists(video_url):
+            if os.path.exists(video_url):
                 # Local file path (used in mock mode or if file already exists)
                 video_path = video_url
                 logger.info(
@@ -1089,16 +1085,19 @@ async def process_analysis_azure(
                     "Mock storage mode: Video file was not properly saved",
                     details={"video_url": video_url, "analysis_id": analysis_id}
                 )
-            else:
-                # Try to get video from blob storage by blob name
-                if storage_service is None:
-                    raise StorageError(
-                        "Storage service not available and video URL is not a local file",
-                        details={"video_url": video_url, "analysis_id": analysis_id}
-                    )
+            elif storage_service and storage_service.container_client:
+                # Use storage service to download (handles authentication properly)
+                # Extract blob name from URL or use video_url as blob name
+                if video_url.startswith('http') or video_url.startswith('https'):
+                    # Extract blob name from URL (format: https://account.blob.core.windows.net/container/blobname)
+                    blob_name = video_url.split('/')[-1] if '/' in video_url else video_url
+                    # Remove query parameters if present
+                    blob_name = blob_name.split('?')[0]
+                else:
+                    # Assume video_url is already a blob name
+                    blob_name = video_url
                 
-                blob_name = video_url.split('/')[-1] if '/' in video_url else video_url
-                logger.debug(f"[{request_id}] Downloading blob: {blob_name}")
+                logger.info(f"[{request_id}] Downloading blob from storage: {blob_name}")
                 
                 import tempfile
                 video_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
@@ -1106,19 +1105,36 @@ async def process_analysis_azure(
                 
                 if not blob_data:
                     raise StorageError(
-                        f"Could not download video blob: {blob_name}",
-                        details={"blob_name": blob_name, "analysis_id": analysis_id}
+                        f"Could not download video blob: {blob_name}. Blob may not exist or storage service is unavailable.",
+                        details={"blob_name": blob_name, "video_url": video_url, "analysis_id": analysis_id}
                     )
                 
                 try:
                     with open(video_path, 'wb') as f:
                         f.write(blob_data)
-                        logger.debug(f"[{request_id}] Blob downloaded and saved: {video_path}")
+                    logger.info(f"[{request_id}] ✅ Blob downloaded and saved: {video_path} ({len(blob_data)} bytes)")
                 except OSError as e:
                     raise StorageError(
                         f"Failed to save downloaded blob to file: {e}",
                         details={"video_path": video_path, "analysis_id": analysis_id}
                     )
+            elif video_url.startswith('http') or video_url.startswith('https'):
+                # Fallback: Try direct HTTP download (may fail if blob requires authentication)
+                logger.warning(f"[{request_id}] Storage service not available, attempting direct HTTP download (may fail if authentication required)")
+                logger.debug(f"[{request_id}] Downloading video from URL: {video_url}")
+                try:
+                    video_path = await gait_service.download_video_from_url(video_url)
+                except Exception as http_error:
+                    raise StorageError(
+                        f"Failed to download video from URL (may require authentication): {http_error}",
+                        details={"video_url": video_url, "error": str(http_error), "analysis_id": analysis_id}
+                    )
+            else:
+                # No storage service and not a valid URL or file path
+                raise StorageError(
+                    "Storage service not available and video URL is not a local file or valid URL",
+                    details={"video_url": video_url, "analysis_id": analysis_id}
+                )
         except (StorageError, VideoProcessingError):
             raise  # Re-raise custom exceptions
         except Exception as e:

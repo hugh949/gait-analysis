@@ -100,8 +100,9 @@ class AzureStorageService:
             return None
     
     async def download_blob(self, blob_name: str) -> Optional[bytes]:
-        """Download blob data asynchronously"""
+        """Download blob data asynchronously with proper error handling"""
         if not self.container_client:
+            logger.error(f"Cannot download blob '{blob_name}': Storage service not configured")
             return None
         
         try:
@@ -109,16 +110,25 @@ class AzureStorageService:
             loop = asyncio.get_event_loop()
             
             def _download():
-                blob_client = self.container_client.get_blob_client(blob_name)
-                if blob_client.exists():
+                try:
+                    blob_client = self.container_client.get_blob_client(blob_name)
+                    if not blob_client.exists():
+                        logger.error(f"Blob '{blob_name}' does not exist in container '{self.container_name}'")
+                        return None
+                    
+                    logger.debug(f"Downloading blob '{blob_name}' from container '{self.container_name}'")
                     download_stream = blob_client.download_blob()
-                    return download_stream.readall()
-                return None
+                    blob_data = download_stream.readall()
+                    logger.info(f"✅ Successfully downloaded blob '{blob_name}' ({len(blob_data)} bytes)")
+                    return blob_data
+                except Exception as download_error:
+                    logger.error(f"Error downloading blob '{blob_name}': {download_error}", exc_info=True)
+                    raise
             
             # Run in thread pool to avoid blocking
             return await loop.run_in_executor(None, _download)
         except Exception as e:
-            logger.error(f"Failed to download blob: {e}")
+            logger.error(f"Failed to download blob '{blob_name}': {e}", exc_info=True)
             return None
     
     async def delete_blob(self, blob_name: str) -> bool:
