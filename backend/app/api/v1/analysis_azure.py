@@ -172,69 +172,69 @@ async def upload_video(
         logger.info(f"[{request_id}] ========== UPLOAD REQUEST RECEIVED ==========")
         logger.info(f"[{request_id}] Filename: {file.filename if file else None}")
         logger.info(f"[{request_id}] Patient ID: {patient_id}, View: {view_type}, FPS: {fps}")
-    
-    # Log estimated file size from Content-Length header if available
-    content_length = None
-    if request:
-        content_length = request.headers.get("content-length")
-    if content_length:
+        
+        # Log estimated file size from Content-Length header if available
+        content_length = None
+        if request:
+            content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                estimated_size_mb = int(content_length) / (1024 * 1024)
+                logger.info(f"[{request_id}] Estimated file size from Content-Length: {estimated_size_mb:.2f}MB")
+                if estimated_size_mb > 50:
+                    logger.warning(f"[{request_id}] ⚠️ Large file detected ({estimated_size_mb:.2f}MB). Azure timeout is 230s. Upload may timeout.")
+            except (ValueError, TypeError):
+                pass
+        
+        # Validate database service is available
+        if db_service is None:
+            logger.error(f"[{request_id}] Database service not available")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "SERVICE_UNAVAILABLE",
+                    "message": "Database service is not available",
+                    "details": {}
+                }
+            )
+        
+        # Validate file is provided
+        if not file or not file.filename:
+            logger.error(f"[{request_id}] No file provided in upload request")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "VALIDATION_ERROR", "message": "No file provided", "field": "file"}
+            )
+        
+        # Validate file extension
+        file_ext = Path(file.filename).suffix.lower()
+        SUPPORTED_FORMATS = ['.mp4', '.avi', '.mov', '.mkv']
+        if file_ext not in SUPPORTED_FORMATS:
+            logger.error(
+                f"[{request_id}] Unsupported file format: {file_ext}",
+                extra={"filename": file.filename, "extension": file_ext}
+            )
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "VALIDATION_ERROR",
+                    "message": f"Unsupported file format: {file_ext}. Supported formats: {', '.join(SUPPORTED_FORMATS)}",
+                    "field": "file",
+                    "details": {"extension": file_ext, "supported": SUPPORTED_FORMATS}
+                }
+            )
+        
+        # Validate file size (max 500MB)
+        # CRITICAL: Azure App Service has a 230-second (3.8 minute) request timeout
+        # For files larger than ~50MB, upload may timeout
+        # Consider implementing chunked uploads or direct blob storage uploads for larger files
+        MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
+        MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024  # 50MB - recommended max to avoid timeout
+        file_size = 0
+        tmp_path: Optional[str] = None
+        video_url: Optional[str] = None
+        
         try:
-            estimated_size_mb = int(content_length) / (1024 * 1024)
-            logger.info(f"[{request_id}] Estimated file size from Content-Length: {estimated_size_mb:.2f}MB")
-            if estimated_size_mb > 50:
-                logger.warning(f"[{request_id}] ⚠️ Large file detected ({estimated_size_mb:.2f}MB). Azure timeout is 230s. Upload may timeout.")
-        except (ValueError, TypeError):
-            pass
-    
-    # Validate database service is available
-    if db_service is None:
-        logger.error(f"[{request_id}] Database service not available")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "SERVICE_UNAVAILABLE",
-                "message": "Database service is not available",
-                "details": {}
-            }
-        )
-    
-    # Validate file is provided
-    if not file or not file.filename:
-        logger.error(f"[{request_id}] No file provided in upload request")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "VALIDATION_ERROR", "message": "No file provided", "field": "file"}
-        )
-    
-    # Validate file extension
-    file_ext = Path(file.filename).suffix.lower()
-    SUPPORTED_FORMATS = ['.mp4', '.avi', '.mov', '.mkv']
-    if file_ext not in SUPPORTED_FORMATS:
-        logger.error(
-            f"[{request_id}] Unsupported file format: {file_ext}",
-            extra={"filename": file.filename, "extension": file_ext}
-        )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "VALIDATION_ERROR",
-                "message": f"Unsupported file format: {file_ext}. Supported formats: {', '.join(SUPPORTED_FORMATS)}",
-                "field": "file",
-                "details": {"extension": file_ext, "supported": SUPPORTED_FORMATS}
-            }
-        )
-    
-    # Validate file size (max 500MB)
-    # CRITICAL: Azure App Service has a 230-second (3.8 minute) request timeout
-    # For files larger than ~50MB, upload may timeout
-    # Consider implementing chunked uploads or direct blob storage uploads for larger files
-    MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
-    MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024  # 50MB - recommended max to avoid timeout
-    file_size = 0
-    tmp_path: Optional[str] = None
-    video_url: Optional[str] = None
-    
-    try:
         # CRITICAL: Check file size early and warn if it might timeout
         # We can't check file.size directly for streaming uploads, but we can warn after first chunk
         upload_start_time = time.time()
