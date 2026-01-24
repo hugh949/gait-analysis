@@ -702,37 +702,75 @@ export default function AnalysisUpload() {
       // Get any processing analysis from localStorage
       const lastAnalysisId = localStorage.getItem('lastAnalysisId')
       
-      // Cancel backend processing if there's an active analysis
+      // CRITICAL: Only cancel if analysis is truly stuck, not if it's actively processing
+      // Step 4 can take time (database saves), so don't cancel active processing
       if (lastAnalysisId) {
         try {
           // Check if it's still processing
           const checkResponse = await fetch(`${API_URL}/api/v1/analysis/${lastAnalysisId}`)
           if (checkResponse.ok) {
             const data = await checkResponse.json()
+            const currentStep = data.current_step
+            const stepProgress = data.step_progress || 0
+            const updatedAt = data.updated_at || data.created_at
+            
+            // Only cancel if:
+            // 1. Analysis is stuck (no update in last 10 minutes) AND
+            // 2. Not in Step 4 (report generation can take time) OR
+            // 3. Step 4 is stuck (98%+ for >5 minutes)
             if (data.status === 'processing' || data.status === 'uploading') {
-              // Cancel it on the backend
-              console.log(`🛑 Cancelling previous processing analysis: ${lastAnalysisId}`)
-              try {
-                const cancelResponse = await fetch(`${API_URL}/api/v1/analysis/${lastAnalysisId}/cancel`, {
-                  method: 'POST',
-                  headers: {
-                    'Accept': 'application/json',
-                  },
-                })
-                if (cancelResponse.ok) {
-                  console.log('✅ Previous analysis cancelled on backend')
-                } else {
-                  console.warn('⚠️ Failed to cancel previous analysis on backend, but continuing with cleanup')
+              const now = Date.now()
+              const lastUpdate = updatedAt ? new Date(updatedAt).getTime() : now
+              const minutesSinceUpdate = (now - lastUpdate) / (1000 * 60)
+              
+              const isStep4 = currentStep === 'report_generation'
+              const isStep4Stuck = isStep4 && stepProgress >= 98 && minutesSinceUpdate > 5
+              const isOtherStepStuck = !isStep4 && minutesSinceUpdate > 10
+              
+              if (isStep4Stuck || isOtherStepStuck) {
+                // Analysis is truly stuck - cancel it
+                console.log(`🛑 Cancelling stuck analysis: ${lastAnalysisId} (${minutesSinceUpdate.toFixed(1)}m since update, step: ${currentStep}, progress: ${stepProgress}%)`)
+                try {
+                  const cancelResponse = await fetch(`${API_URL}/api/v1/analysis/${lastAnalysisId}/cancel`, {
+                    method: 'POST',
+                    headers: {
+                      'Accept': 'application/json',
+                    },
+                  })
+                  if (cancelResponse.ok) {
+                    console.log('✅ Stuck analysis cancelled on backend')
+                  } else {
+                    console.warn('⚠️ Failed to cancel stuck analysis on backend, but continuing with cleanup')
+                  }
+                } catch (cancelErr) {
+                  console.warn('⚠️ Error calling cancel endpoint:', cancelErr)
                 }
-              } catch (cancelErr) {
-                console.warn('⚠️ Error calling cancel endpoint:', cancelErr)
-                // Continue with cleanup even if cancel fails
+              } else {
+                // Analysis is actively processing - DON'T cancel, resume tracking it
+                console.log(`✅ Resuming active analysis: ${lastAnalysisId} (step: ${currentStep}, progress: ${stepProgress}%, updated ${minutesSinceUpdate.toFixed(1)}m ago)`)
+                setAnalysisId(lastAnalysisId)
+                setStatus('processing')
+                setCurrentStep(currentStep as ProcessingStep || 'pose_estimation')
+                setStepProgress(stepProgress)
+                setStepMessage(data.step_message || 'Resuming analysis...')
+                // Start polling to continue tracking
+                pollAnalysisStatus(lastAnalysisId)
+                return // Don't clear state - we're resuming
               }
+            } else if (data.status === 'completed') {
+              // Analysis is already complete - just show completion
+              console.log(`✅ Analysis already completed: ${lastAnalysisId}`)
+              setAnalysisId(lastAnalysisId)
+              setStatus('completed')
+              setCurrentStep('report_generation')
+              setStepProgress(100)
+              setStepMessage('Analysis complete! Report ready.')
+              return // Don't clear - show completion
             }
           }
         } catch (err) {
           console.warn('⚠️ Error checking previous analysis:', err)
-          // Continue with cleanup
+          // Continue with cleanup if check fails
         }
       }
       
