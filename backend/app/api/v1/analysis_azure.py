@@ -619,82 +619,45 @@ async def upload_video(
                     else:
                         logger.error(f"[{request_id}] ✅✅✅ Analysis confirmed in memory ✅✅✅")
                 
-                # CRITICAL: Verify the analysis is immediately readable before returning
-                # This ensures the database write is complete and visible to other requests
-                # Different backends have different consistency guarantees:
-                # - Table Storage: Eventual consistency (may need retries)
-                # - SQL: Strong consistency (usually immediate)
-                # - Mock: File-based (may need retries for filesystem sync)
-                verification_attempts = 0
-                max_verification_attempts = 10 if use_table_storage else 5  # More retries for Table Storage
+                # OPTIMIZED: Quick verification - only check once for most backends
+                # SQL and Mock (in-memory) should be immediately available
+                # Table Storage may need a retry, but don't block the response
                 verification_passed = False
                 
-                while verification_attempts < max_verification_attempts:
+                # Quick check - most backends are immediate
+                try:
+                    verification_analysis = await db_service.get_analysis(analysis_id)
+                    if verification_analysis and verification_analysis.get('id') == analysis_id:
+                        logger.info(f"[{request_id}] ✅ Analysis verified immediately after creation")
+                        verification_passed = True
+                except Exception as e:
+                    logger.warning(f"[{request_id}] ⚠️ Initial verification check failed: {e}")
+                
+                # For Table Storage (eventual consistency), do one retry with short delay
+                if not verification_passed and use_table_storage:
+                    logger.info(f"[{request_id}] Table Storage detected - doing one quick retry...")
+                    await asyncio.sleep(0.2)  # Short delay for eventual consistency
                     try:
                         verification_analysis = await db_service.get_analysis(analysis_id)
                         if verification_analysis and verification_analysis.get('id') == analysis_id:
-                            logger.info(f"[{request_id}] ✅✅✅ VERIFIED: Analysis is immediately readable after creation (attempt {verification_attempts + 1}) ✅✅✅")
-                            logger.info(f"[{request_id}] Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
+                            logger.info(f"[{request_id}] ✅ Analysis verified after Table Storage retry")
                             verification_passed = True
-                            break
-                        else:
-                            verification_attempts += 1
-                            if verification_attempts < max_verification_attempts:
-                                delay = 0.3 if use_table_storage else 0.2  # Longer delay for Table Storage
-                                logger.warning(f"[{request_id}] ⚠️ Analysis not yet readable (attempt {verification_attempts}/{max_verification_attempts}), retrying in {delay}s...")
-                                await asyncio.sleep(delay)
-                                continue
-                            else:
-                                logger.error(f"[{request_id}] ❌ Analysis not immediately readable after {max_verification_attempts} attempts")
                     except Exception as e:
-                        verification_attempts += 1
-                        if verification_attempts < max_verification_attempts:
-                            delay = 0.3 if use_table_storage else 0.2
-                            logger.warning(f"[{request_id}] ⚠️ Verification read failed (attempt {verification_attempts}/{max_verification_attempts}), retrying in {delay}s: {e}")
-                            await asyncio.sleep(delay)
-                            continue
-                        else:
-                            logger.error(f"[{request_id}] ❌ Could not verify analysis after creation: {e}", exc_info=True)
+                        logger.warning(f"[{request_id}] ⚠️ Table Storage retry also failed: {e}")
                 
+                # For Mock storage, check in-memory directly (fastest)
+                if not verification_passed and use_mock:
+                    if analysis_id in db_service._mock_storage:
+                        logger.info(f"[{request_id}] ✅ Analysis verified in memory (mock storage)")
+                        verification_passed = True
+                
+                # Log warning if verification failed, but don't block response
+                # Frontend will retry polling, and analysis should be available soon
                 if not verification_passed:
-                    logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis verification failed after {max_verification_attempts} attempts ❌❌❌")
-                    logger.error(f"[{request_id}] ❌ Analysis may not be visible to other requests")
-                    logger.error(f"[{request_id}] 🔍🔍🔍 DIAGNOSTIC: Verification failure details 🔍🔍🔍")
-                    logger.error(f"[{request_id}] 🔍   - Analysis ID: {analysis_id}")
-                    logger.error(f"[{request_id}] 🔍   - Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
-                    if use_mock:
-                        logger.error(f"[{request_id}] 🔍   - In-memory check: {analysis_id in (db_service._mock_storage if db_service else {})}")
-                        if db_service:
-                            logger.error(f"[{request_id}] 🔍   - In-memory storage size: {len(db_service._mock_storage)}")
-                            logger.error(f"[{request_id}] 🔍   - In-memory IDs: {list(db_service._mock_storage.keys())[:10]}")
-                            logger.error(f"[{request_id}] 🔍   - Storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}")
-                            storage_file = getattr(db_service, '_mock_storage_file', None)
-                            if storage_file:
-                                logger.error(f"[{request_id}] 🔍   - File exists: {os.path.exists(storage_file)}")
-                                if os.path.exists(storage_file):
-                                    logger.error(f"[{request_id}] 🔍   - File size: {os.path.getsize(storage_file)} bytes")
-                    
-                    # CRITICAL: Try one more time with a longer delay
-                    logger.warning(f"[{request_id}] ⚠️ Attempting final verification with extended delay...")
-                    await asyncio.sleep(1.0)  # Wait 1 second for file system sync
-                    try:
-                        final_check = await db_service.get_analysis(analysis_id)
-                        if final_check and final_check.get('id') == analysis_id:
-                            logger.info(f"[{request_id}] ✅ Final verification passed after extended delay")
-                            verification_passed = True
-                        else:
-                            logger.error(f"[{request_id}] ❌ Final verification still failed - analysis not found")
-                    except Exception as final_error:
-                        logger.error(f"[{request_id}] ❌ Final verification exception: {final_error}", exc_info=True)
-                    
-                    if not verification_passed:
-                        # CRITICAL: Don't continue if verification fails - this causes "Analysis not found" errors
-                        logger.error(f"[{request_id}] ❌❌❌ FAILING REQUEST: Analysis verification failed - cannot proceed ❌❌❌")
-                        logger.error(f"[{request_id}] ❌ Analysis verification failed - returning error response")
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Analysis was created but could not be verified as readable. This may indicate a file system sync issue."
-                        )
+                    logger.warning(f"[{request_id}] ⚠️ Analysis verification failed, but continuing (frontend will retry)")
+                    logger.warning(f"[{request_id}] Analysis ID: {analysis_id} - Frontend should retry polling if not found")
+                else:
+                    logger.info(f"[{request_id}] ✅ Analysis creation and verification complete - ready for polling")
                 
                 logger.error(f"[{request_id}] ========== ANALYSIS RECORD CREATION COMPLETE ==========")
             except Exception as e:
@@ -1947,6 +1910,18 @@ async def process_analysis_azure(
             logger.info(f"[{request_id}] 🔍 Step 4 (Report Generation): {'✅ COMPLETE' if steps_completed.get('step_4_report_generation', False) else '❌ FAILED'}")
             logger.info("=" * 80)
             
+            # CRITICAL: Save steps_completed to database immediately after validation
+            # This ensures the frontend can check step completion status
+            try:
+                logger.info(f"[{request_id}] 💾 Saving steps_completed to database: {steps_completed}")
+                await db_service.update_analysis(analysis_id, {
+                    'steps_completed': steps_completed
+                })
+                logger.info(f"[{request_id}] ✅ steps_completed saved to database")
+            except Exception as save_error:
+                logger.warning(f"[{request_id}] ⚠️ Failed to save steps_completed: {save_error}")
+                # Non-critical - will be saved in Step 4
+            
             # CRITICAL: Fail if any step didn't complete
             if not all(steps_completed.values()):
                 failed_steps = [step for step, completed in steps_completed.items() if not completed]
@@ -2126,6 +2101,19 @@ async def process_analysis_azure(
         if metrics:
             logger.info(f"[{request_id}] 🎯 [STEP 4] Key metrics preview: cadence={metrics.get('cadence')}, speed={metrics.get('walking_speed')}, step_length={metrics.get('step_length')}")
         logger.info("=" * 80)
+        
+        # CRITICAL: Ensure steps_completed is saved before Step 4 starts
+        # This provides visibility into which steps completed
+        if steps_completed:
+            try:
+                logger.info(f"[{request_id}] 💾 [STEP 4] Ensuring steps_completed is saved: {steps_completed}")
+                await db_service.update_analysis(analysis_id, {
+                    'steps_completed': steps_completed
+                })
+                logger.info(f"[{request_id}] ✅ [STEP 4] steps_completed confirmed in database")
+            except Exception as steps_save_error:
+                logger.warning(f"[{request_id}] ⚠️ [STEP 4] Failed to save steps_completed: {steps_save_error}")
+                # Will be saved with final completion update
         
         # Update progress callback with detailed message
         if progress_callback:

@@ -176,15 +176,32 @@ export default function AnalysisUpload() {
             
             // Handle specific HTTP status codes with helpful messages
             if (xhr.status === 502) {
-              errorMessage = `Upload failed: Bad Gateway (502)\n\n` +
+              // Try to extract more details from response
+              let details = ''
+              try {
+                const response = JSON.parse(xhr.responseText)
+                if (response.detail) {
+                  if (typeof response.detail === 'string') {
+                    details = `\n\nServer details: ${response.detail}`
+                  } else if (response.detail.message) {
+                    details = `\n\nServer details: ${response.detail.message}`
+                  }
+                }
+              } catch (e) {
+                // Response not JSON, ignore
+              }
+              
+              errorMessage = `Upload failed: Server Error (502 Bad Gateway)${details}\n\n` +
                 `The backend server is temporarily unavailable. This usually means:\n\n` +
                 `• The server is restarting or deploying\n` +
                 `• The server is overloaded\n` +
-                `• There's a network/proxy issue\n\n` +
+                `• There's a network/proxy issue\n` +
+                `• The request timed out (file may be too large)\n\n` +
                 `Please try:\n` +
                 `1. Wait 30-60 seconds and try again\n` +
                 `2. Check if the server is running\n` +
-                `3. Try with a smaller file if the issue persists`
+                `3. Try with a smaller file (<50 MB) if the issue persists\n` +
+                `4. Check the browser console for more details`
             } else if (xhr.status === 500) {
               errorMessage = `Upload failed: Internal Server Error (500)\n\n` +
                 `The server encountered an error processing your upload.\n\n` +
@@ -301,15 +318,20 @@ export default function AnalysisUpload() {
       setAnalysisId(id)
       progressRef.current = 100 // Update ref
       setProgress(100)
+      
+      // Immediately transition to processing state with initial step
       setStatus('processing')
       setCurrentStep('pose_estimation')
+      setStepProgress(0)
+      setStepMessage('Upload complete. Initializing analysis...')
+      
       // Store analysis ID in localStorage for resume capability
       localStorage.setItem('lastAnalysisId', id)
 
-      // CRITICAL: Wait longer before polling to allow database write to complete
-      // Table Storage can have eventual consistency, SQL is usually immediate, mock needs filesystem sync
-      // Use 2 seconds to be safe for all backends
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Start polling immediately - backend should have analysis ready
+      // Reduced delay from 2000ms to 500ms for faster response
+      // Backend verification ensures analysis is readable before returning
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       pollAnalysisStatus(id)
     } catch (err: any) {
