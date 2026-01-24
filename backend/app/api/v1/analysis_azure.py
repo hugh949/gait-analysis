@@ -2652,4 +2652,17 @@ async def force_complete_analysis(
             }
         )
 
+# CRITICAL: Log final router state at end of module
+# This ensures all routes are registered before module is considered loaded
+logger.info(f"🔍 Router final state: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
+if hasattr(router, 'routes') and len(router.routes) > 0:
+    logger.info("✅ Router has routes - endpoints should be available")
+    for route in router.routes:
+        if hasattr(route, 'path'):
+            methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+            logger.info(f"  Final route: {methods} {route.path}")
+else:
+    logger.error("❌ CRITICAL: Router has no routes at end of module!")
+    logger.error("❌ This will cause 404 errors on all endpoints!")
+
 
