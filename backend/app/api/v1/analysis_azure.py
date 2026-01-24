@@ -235,7 +235,7 @@ async def upload_video(
         video_url: Optional[str] = None
         
         try:
-        # CRITICAL: Check file size early and warn if it might timeout
+            # CRITICAL: Check file size early and warn if it might timeout
         # We can't check file.size directly for streaming uploads, but we can warn after first chunk
         upload_start_time = time.time()
         
