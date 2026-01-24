@@ -667,10 +667,10 @@ async def upload_video(
                 view_type_str = str(view_type)
                 
                 # CRITICAL: Start keep-alive heartbeat IMMEDIATELY after scheduling
-            # This ensures the analysis stays alive even before processing starts
-            # This is especially important in multi-worker environments
-            # NOTE: This task runs independently and will continue even after request completes
-            async def immediate_keepalive():
+                # This ensures the analysis stays alive even before processing starts
+                # This is especially important in multi-worker environments
+                # NOTE: This task runs independently and will continue even after request completes
+                async def immediate_keepalive():
                 """Immediate keep-alive that starts right after analysis creation"""
                 keepalive_count = 0
                 logger.info(f"[{request_id}] 🔄 IMMEDIATE KEEP-ALIVE STARTED for analysis {analysis_id}")
