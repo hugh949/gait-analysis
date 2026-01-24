@@ -779,7 +779,7 @@ async def upload_video(
                 
                 if background_tasks is None:
                     # Fallback: use asyncio.create_task if BackgroundTasks not available
-                    import asyncio
+                    # NOTE: asyncio is already imported at module level (line 19)
                     asyncio.create_task(wrapped_process_analysis())
                     logger.info(f"[{request_id}] ✅ Background task scheduled via asyncio.create_task")
                 else:
