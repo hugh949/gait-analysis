@@ -1538,19 +1538,6 @@ class GaitAnalysisService:
         logger.info(f"🔍 Extracted: {len(left_ankle_positions)} left ankle positions, {len(right_ankle_positions)} right ankle positions")
         
         if len(left_ankle_positions) < 5 or len(right_ankle_positions) < 5:
-                left_heel_positions.append([
-                    keypoints['left_heel']['x'],
-                    keypoints['left_heel']['y'],
-                    keypoints['left_heel'].get('z', 0.0)
-                ])
-            if 'right_heel' in keypoints:
-                right_heel_positions.append([
-                    keypoints['right_heel']['x'],
-                    keypoints['right_heel']['y'],
-                    keypoints['right_heel'].get('z', 0.0)
-                ])
-        
-        if len(left_ankle_positions) < 5 or len(right_ankle_positions) < 5:
             error_msg = f"CRITICAL: Insufficient ankle positions extracted! left={len(left_ankle_positions)}, right={len(right_ankle_positions)}, need at least 5 each."
             logger.error(f"❌ {error_msg}")
             logger.error(f"❌ This means the 3D keypoints don't have enough valid ankle data!")
