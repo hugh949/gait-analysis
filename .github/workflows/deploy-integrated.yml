@@ -260,13 +260,14 @@ jobs:
         echo "⚙️  Configuring App Service..."
         
         # Configure container and force image pull in one command
+        # Use new container config commands (non-deprecated)
         az webapp config container set \
           --name ${{ env.AZURE_WEBAPP_NAME }} \
           --resource-group ${{ env.RESOURCE_GROUP }} \
-          --docker-custom-image-name "${{ steps.acr-creds.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
-          --docker-registry-server-url "https://${{ steps.acr-creds.outputs.login_server }}" \
-          --docker-registry-server-user "${{ steps.acr-creds.outputs.username }}" \
-          --docker-registry-server-password "${{ steps.acr-creds.outputs.password }}" \
+          --container-image-name "${{ steps.acr-creds.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
+          --container-registry-url "https://${{ steps.acr-creds.outputs.login_server }}" \
+          --container-registry-user "${{ steps.acr-creds.outputs.username }}" \
+          --container-registry-password "${{ steps.acr-creds.outputs.password }}" \
           --output none
         
         # Force image pull with timestamp
