@@ -371,8 +371,8 @@ async def upload_video(
         if tmp_path and os.path.exists(tmp_path):
             try:
                 from app.services.video_quality_validator import VideoQualityValidator
-                from app.services.gait_analysis import get_gait_analysis_service
                 
+                # Get gait analysis service (defined in this module)
                 gait_service = get_gait_analysis_service()
                 validator = VideoQualityValidator(
                     pose_landmarker=gait_service.pose_landmarker if gait_service else None
