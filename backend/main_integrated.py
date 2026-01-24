@@ -412,34 +412,59 @@ def ensure_upload_endpoint_registered():
 
 if analysis_router:
     try:
+        # Log router details before registration
+        logger.info(f"Registering analysis router...")
+        logger.info(f"Router type: {type(analysis_router)}")
+        logger.info(f"Router has {len(analysis_router.routes)} routes")
+        for route in analysis_router.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                methods = list(route.methods) if hasattr(route.methods, '__iter__') else [str(route.methods)]
+                logger.info(f"  Router route: {methods} {route.path}")
+        
         app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["analysis"])
         logger.info("✓ Analysis router registered at /api/v1/analysis")
         
         # CRITICAL: Verify the upload endpoint is registered
         upload_route_found = False
         test_route_found = False
+        exact_upload_path_found = False
+        
+        logger.info("Checking registered routes after include_router...")
         for route in app.routes:
             if hasattr(route, 'path'):
                 route_path = route.path
-                if '/upload' in route_path and '/api/v1/analysis' in route_path:
+                methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+                
+                # Check for exact match
+                if route_path == "/api/v1/analysis/upload":
+                    exact_upload_path_found = True
                     upload_route_found = True
-                    methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else ['POST']
-                    logger.info(f"✓ Upload endpoint found: {methods} {route_path}")
+                    logger.info(f"✅ Upload endpoint found (EXACT MATCH): {methods} {route_path}")
+                # Check for partial match
+                elif '/upload' in route_path and '/api/v1/analysis' in route_path:
+                    upload_route_found = True
+                    logger.info(f"✓ Upload endpoint found (PARTIAL MATCH): {methods} {route_path}")
                 elif '/test' in route_path and '/api/v1/analysis' in route_path:
                     test_route_found = True
-                    methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else ['GET']
                     logger.info(f"✓ Test endpoint found: {methods} {route_path}")
         
         if not upload_route_found:
             logger.error("❌ CRITICAL: Upload endpoint not found after router registration!")
             logger.error("❌ This will cause 404 errors on file uploads!")
+            logger.error("❌ Attempting fallback registration...")
             ensure_upload_endpoint_registered()
+        elif not exact_upload_path_found:
+            logger.warning("⚠️ Upload endpoint found but path may not match exactly")
+            logger.warning("⚠️ Expected: /api/v1/analysis/upload")
+            ensure_upload_endpoint_registered()  # Try to ensure exact path
         else:
-            logger.info("✅ Upload endpoint is registered and available")
+            logger.info("✅ Upload endpoint is registered and available at exact path")
             
     except Exception as e:
         logger.error(f"❌ CRITICAL: Failed to register analysis router: {e}", exc_info=True)
         logger.error("⚠️ App will continue to start but API endpoints will not work")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         ensure_upload_endpoint_registered()
 else:
     logger.error("❌ CRITICAL: analysis_router is None - cannot register routes!")
@@ -452,6 +477,25 @@ if final_check:
     logger.info("✅ Upload endpoint verification passed")
 else:
     logger.error("❌ CRITICAL: Upload endpoint could not be registered - uploads will fail!")
+
+# CRITICAL: Log all API routes for debugging
+logger.info("=" * 80)
+logger.info("REGISTERED API ROUTES:")
+logger.info("=" * 80)
+api_routes = []
+for route in app.routes:
+    if hasattr(route, 'path'):
+        route_path = route.path
+        if '/api/' in route_path:
+            methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+            api_routes.append(f"  {', '.join(methods):<10} {route_path}")
+            logger.info(f"  {', '.join(methods):<10} {route_path}")
+
+if not api_routes:
+    logger.error("❌ NO API ROUTES FOUND - This is a critical error!")
+else:
+    logger.info(f"✅ Found {len(api_routes)} API routes")
+logger.info("=" * 80)
 
 # Include testing router if available
 if testing_router:
