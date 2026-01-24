@@ -734,6 +734,8 @@ class AzureSQLService:
                         entity[key] = value
                     elif key == 'metrics':
                         entity['metrics'] = json.dumps(value)
+                    elif key == 'steps_completed':
+                        entity['steps_completed'] = json.dumps(value)  # Store as JSON string
                 
                 entity['updated_at'] = datetime.utcnow().isoformat()
                 
@@ -761,6 +763,12 @@ class AzureSQLService:
             if analysis_id in AzureSQLService._mock_storage:
                 from datetime import datetime
                 # CRITICAL: Update in-memory FIRST (immediate visibility)
+                # Handle steps_completed specially - merge with existing if present
+                if 'steps_completed' in updates:
+                    existing_steps = AzureSQLService._mock_storage[analysis_id].get('steps_completed', {})
+                    if isinstance(existing_steps, dict) and isinstance(updates['steps_completed'], dict):
+                        existing_steps.update(updates['steps_completed'])
+                        updates['steps_completed'] = existing_steps
                 AzureSQLService._mock_storage[analysis_id].update(updates)
                 AzureSQLService._mock_storage[analysis_id]['updated_at'] = datetime.now().isoformat()
                 logger.info(f"📝 UPDATE: Updated analysis {analysis_id} in memory. Status: {updates.get('status')}, step: {updates.get('current_step')}, progress: {updates.get('step_progress')}%")
@@ -800,9 +808,11 @@ class AzureSQLService:
                 values = []
                 
                 for key, value in updates.items():
-                    if key in ['status', 'current_step', 'step_progress', 'step_message', 'metrics', 'video_url']:
+                    if key in ['status', 'current_step', 'step_progress', 'step_message', 'metrics', 'video_url', 'steps_completed']:
                         set_clauses.append(f"{key} = ?")
                         if key == 'metrics' and isinstance(value, dict):
+                            values.append(json.dumps(value))
+                        elif key == 'steps_completed' and isinstance(value, dict):
                             values.append(json.dumps(value))
                         else:
                             values.append(value)
@@ -963,6 +973,7 @@ class AzureSQLService:
                     'step_progress': entity.get('step_progress', 0),
                     'step_message': entity.get('step_message'),
                     'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
+                    'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
                     'created_at': entity.get('created_at'),
                     'updated_at': entity.get('updated_at')
                 }
@@ -1023,6 +1034,9 @@ class AzureSQLService:
                 # Strategy 1: Check in-memory storage FIRST (fastest and most up-to-date)
                 if analysis_id in AzureSQLService._mock_storage:
                     analysis_data = AzureSQLService._mock_storage[analysis_id].copy()
+                    # Ensure steps_completed exists (default to empty dict if missing)
+                    if 'steps_completed' not in analysis_data:
+                        analysis_data['steps_completed'] = {}
                     logger.error(f"🔍✅ FOUND in MEMORY (attempt {retry + 1}/{max_retries})")
                     logger.error(f"🔍 Analysis state: status={analysis_data.get('status')}, step={analysis_data.get('current_step')}, progress={analysis_data.get('step_progress')}%")
                     logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS END (SUCCESS - MEMORY) 🔍🔍🔍")
@@ -1082,6 +1096,9 @@ class AzureSQLService:
                                     
                                     # Return from memory (which now has the correct data)
                                     analysis_data = AzureSQLService._mock_storage[analysis_id].copy()
+                                    # Ensure steps_completed exists
+                                    if 'steps_completed' not in analysis_data:
+                                        analysis_data['steps_completed'] = {}
                                     logger.error(f"🔍 Analysis state: status={analysis_data.get('status')}, step={analysis_data.get('current_step')}, progress={analysis_data.get('step_progress')}%")
                                     logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS END (SUCCESS - FILE) 🔍🔍🔍")
                                     return analysis_data
@@ -1104,6 +1121,9 @@ class AzureSQLService:
                     else:
                         logger.debug(f"GET: Retrieved analysis from mock storage: {analysis_id}")
                     analysis_data = AzureSQLService._mock_storage[analysis_id].copy()
+                    # Ensure steps_completed exists
+                    if 'steps_completed' not in analysis_data:
+                        analysis_data['steps_completed'] = {}
                     logger.error(f"🔍✅ FOUND in MEMORY after reload (attempt {retry + 1}/{max_retries})")
                     logger.error(f"🔍 Analysis state: status={analysis_data.get('status')}, step={analysis_data.get('current_step')}, progress={analysis_data.get('step_progress')}%")
                     logger.error(f"🔍🔍🔍 DIAGNOSTIC GET_ANALYSIS END (SUCCESS - MEMORY AFTER RELOAD) 🔍🔍🔍")
@@ -1168,10 +1188,16 @@ class AzureSQLService:
                                 logger.error(f"CRITICAL: Merged file data into memory. Analysis {analysis_id} should now be available.")
                                 # Return from memory (which now has merged data)
                                 if analysis_id in AzureSQLService._mock_storage:
-                                    return AzureSQLService._mock_storage[analysis_id].copy()
+                                    analysis_data = AzureSQLService._mock_storage[analysis_id].copy()
+                                    if 'steps_completed' not in analysis_data:
+                                        analysis_data['steps_completed'] = {}
+                                    return analysis_data
                                 else:
                                     # Fallback: return directly from file
-                                    return file_data[analysis_id].copy()
+                                    analysis_data = file_data[analysis_id].copy()
+                                    if 'steps_completed' not in analysis_data:
+                                        analysis_data['steps_completed'] = {}
+                                    return analysis_data
                         else:
                             logger.error(f"CRITICAL: File contains invalid data type: {type(file_data)}. Expected dict.")
                 except json.JSONDecodeError as e:
@@ -1190,7 +1216,8 @@ class AzureSQLService:
                 cursor.execute("""
                     SELECT id, patient_id, filename, video_url, status, 
                            current_step, step_progress, step_message, 
-                           metrics, created_at, updated_at
+                           metrics, created_at, updated_at,
+                           COALESCE(steps_completed, '{}') as steps_completed
                     FROM analyses
                     WHERE id = ?
                 """, (analysis_id,))
@@ -1198,6 +1225,7 @@ class AzureSQLService:
                 row = cursor.fetchone()
                 if row:
                     metrics = json.loads(row[8]) if row[8] else {}
+                    steps_completed = json.loads(row[11]) if len(row) > 11 and row[11] else {}
                     return {
                         'id': row[0],
                         'patient_id': row[1],
@@ -1208,6 +1236,7 @@ class AzureSQLService:
                         'step_progress': row[6],
                         'step_message': row[7],
                         'metrics': metrics,
+                        'steps_completed': steps_completed,
                         'created_at': str(row[9]),
                         'updated_at': str(row[10])
                     }
@@ -1237,6 +1266,7 @@ class AzureSQLService:
                         'step_progress': entity.get('step_progress', 0),
                         'step_message': entity.get('step_message'),
                         'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
+                        'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
                         'created_at': entity.get('created_at'),
                         'updated_at': entity.get('updated_at')
                     }
@@ -1254,7 +1284,13 @@ class AzureSQLService:
             # Reload from file to ensure we have latest data
             self._load_mock_storage()
             # Get all from in-memory mock storage (use class variable to ensure persistence)
-            analyses = list(AzureSQLService._mock_storage.values())
+            analyses = []
+            for analysis in AzureSQLService._mock_storage.values():
+                analysis_copy = analysis.copy()
+                # Ensure steps_completed exists (default to empty dict if missing)
+                if 'steps_completed' not in analysis_copy:
+                    analysis_copy['steps_completed'] = {}
+                analyses.append(analysis_copy)
             # Sort by created_at descending
             analyses.sort(key=lambda x: x.get('created_at', ''), reverse=True)
             return analyses[:limit]

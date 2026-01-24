@@ -395,24 +395,46 @@ export default function AnalysisUpload() {
             schedulePoll(2000)
           }
         } else if (analysisStatus === 'completed') {
-          // CRITICAL: Only mark as completed if metrics exist AND have meaningful data
+          // CRITICAL: Only mark as completed if:
+          // 1. Metrics exist AND have meaningful data
+          // 2. All 4 steps are marked as completed in steps_completed
           // This prevents showing "View Report" when processing isn't truly done
           const hasValidMetrics = data.metrics && 
             Object.keys(data.metrics).length > 0 &&
             (data.metrics.cadence || data.metrics.walking_speed || data.metrics.step_length)
           
-          if (hasValidMetrics) {
+          // Check if all steps are completed
+          const stepsCompleted = data.steps_completed || {}
+          const allStepsComplete = (
+            stepsCompleted.step_1_pose_estimation === true &&
+            stepsCompleted.step_2_3d_lifting === true &&
+            stepsCompleted.step_3_metrics_calculation === true &&
+            stepsCompleted.step_4_report_generation === true
+          )
+          
+          if (hasValidMetrics && allStepsComplete) {
             setStatus('completed')
             setCurrentStep('report_generation')
             setStepProgress(100)
             setStepMessage(data.step_message || 'Analysis complete! Reports ready.')
             clearPollTimeout()
-            console.log('✅ Analysis completed with valid metrics')
+            console.log('✅ Analysis completed with valid metrics and all steps complete')
           } else {
             setStatus('processing')
             setCurrentStep('report_generation')
             setStepProgress(data.step_progress || 98)
-            setStepMessage(data.step_message || 'Saving analysis results to database...')
+            if (!hasValidMetrics) {
+              setStepMessage('Saving analysis results to database...')
+            } else if (!allStepsComplete) {
+              const incompleteSteps = []
+              if (stepsCompleted.step_1_pose_estimation !== true) incompleteSteps.push('Step 1')
+              if (stepsCompleted.step_2_3d_lifting !== true) incompleteSteps.push('Step 2')
+              if (stepsCompleted.step_3_metrics_calculation !== true) incompleteSteps.push('Step 3')
+              if (stepsCompleted.step_4_report_generation !== true) incompleteSteps.push('Step 4')
+              setStepMessage(`Completing steps: ${incompleteSteps.join(', ')}...`)
+            } else {
+              setStepMessage(data.step_message || 'Saving analysis results to database...')
+            }
             schedulePoll(1000)
           }
         } else if (analysisStatus === 'failed') {

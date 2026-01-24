@@ -1969,6 +1969,13 @@ async def process_analysis_azure(
             logger.info(f"[{request_id}] ✅ [STEP 4] Metrics validation PASSED - all checks passed")
             logger.info("=" * 80)
             
+            # Update progress to indicate Step 4 is starting database save
+            if progress_callback:
+                try:
+                    progress_callback(99, "Saving analysis results to database...")
+                except Exception as e:
+                    logger.warning(f"Error in progress callback: {e}")
+            
             logger.info(
                 f"[{request_id}] ✅ Video analysis completed successfully: {frames_processed} frames processed, {len(metrics)} metrics calculated",
                 extra={
@@ -2192,7 +2199,13 @@ async def process_analysis_azure(
                     'current_step': 'report_generation',
                     'step_progress': 100,
                     'step_message': 'Analysis complete!',
-                    'metrics': metrics
+                    'metrics': metrics,
+                    'steps_completed': {
+                        'step_1_pose_estimation': True,
+                        'step_2_3d_lifting': True,
+                        'step_3_metrics_calculation': True,
+                        'step_4_report_generation': True
+                    }
                 })
                 
                 if not update_result:
@@ -2204,7 +2217,13 @@ async def process_analysis_azure(
                             'current_step': 'report_generation',
                             'step_progress': 100,
                             'step_message': 'Analysis complete! (sync)',
-                            'metrics': metrics
+                            'metrics': metrics,
+                            'steps_completed': {
+                                'step_1_pose_estimation': True,
+                                'step_2_3d_lifting': True,
+                                'step_3_metrics_calculation': True,
+                                'step_4_report_generation': True
+                            }
                         })
                         if not sync_result:
                             raise Exception("Both async and sync updates returned False")
@@ -2212,7 +2231,7 @@ async def process_analysis_azure(
                         raise Exception("Update returned False and sync method not available")
                 
                 # CRITICAL: Verify the update was successful by reading it back
-                await asyncio.sleep(0.3)  # Small delay for database consistency
+                await asyncio.sleep(0.1)  # Reduced delay for faster completion (was 0.3)
                 verification = await db_service.get_analysis(analysis_id)
                 
                 logger.info(f"[{request_id}] 🔍 [STEP 4] Verification check (attempt {retry + 1}):")
@@ -2234,8 +2253,9 @@ async def process_analysis_azure(
                     else:
                         logger.warning(f"[{request_id}] ⚠️ [STEP 4] Status is 'completed' but no metrics - retrying...")
                         # Try one more update with metrics
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(0.1)  # Reduced delay (was 0.2)
                         await db_service.update_analysis(analysis_id, {'metrics': metrics})
+                        await asyncio.sleep(0.1)  # Reduced delay
                         verification2 = await db_service.get_analysis(analysis_id)
                         if verification2 and verification2.get('metrics'):
                             completion_success = True
@@ -2321,10 +2341,16 @@ async def process_analysis_azure(
                             'current_step': 'report_generation',
                             'step_progress': 100,
                             'step_message': 'Analysis complete! (sync final retry)',
-                            'metrics': metrics
+                            'metrics': metrics,
+                            'steps_completed': {
+                                'step_1_pose_estimation': True,
+                                'step_2_3d_lifting': True,
+                                'step_3_metrics_calculation': True,
+                                'step_4_report_generation': True
+                            }
                         })
                         if sync_success:
-                            await asyncio.sleep(0.3)  # Reduced delay
+                            await asyncio.sleep(0.1)  # Reduced delay (was 0.3)
                             verification = await db_service.get_analysis(analysis_id)
                             if verification and verification.get('status') == 'completed' and verification.get('metrics'):
                                 completion_success = True
@@ -2332,7 +2358,7 @@ async def process_analysis_azure(
                     
                     # If sync didn't work and we still have time, try async one more time
                     if not completion_success and (time.time() - completion_start_time) < max_completion_time:
-                        await asyncio.sleep(0.5)  # Reduced delay
+                        await asyncio.sleep(0.2)  # Reduced delay (was 0.5)
                         await db_service.update_analysis(analysis_id, {
                             'status': 'completed',
                             'current_step': 'report_generation',
@@ -2343,7 +2369,7 @@ async def process_analysis_azure(
                         logger.info(f"[{request_id}] Analysis completion update attempted on final async retry")
                         
                         # Verify final retry
-                        await asyncio.sleep(0.3)  # Reduced delay
+                        await asyncio.sleep(0.1)  # Reduced delay (was 0.3)
                         verification = await db_service.get_analysis(analysis_id)
                         if verification and verification.get('status') == 'completed' and verification.get('metrics'):
                             completion_success = True
@@ -2383,7 +2409,7 @@ async def process_analysis_azure(
                         'metrics': final_check.get('metrics')
                     })
                     if final_update:
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.1)  # Reduced delay (was 0.3)
                         verification = await db_service.get_analysis(analysis_id)
                         if verification and verification.get('status') == 'completed':
                             completion_success = True
