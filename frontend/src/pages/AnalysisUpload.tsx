@@ -1061,7 +1061,7 @@ export default function AnalysisUpload() {
                       Est. remaining: {Math.floor(((Date.now() - startTime) / stepProgress) * (100 - stepProgress) / 1000)}s
                     </span>
                   )}
-                  {status === 'processing' && currentStep === 'report_generation' && stepProgress >= 98 && (
+                  {(status === 'processing' || status === 'completed') && currentStep === 'report_generation' && stepProgress >= 98 && (
                     <span className="finalizing-indicator">
                       Finalizing...
                     </span>
@@ -1168,39 +1168,28 @@ export default function AnalysisUpload() {
               </div>
               
               <div className={`step-card ${
-                (() => {
-                  // Extract to avoid type narrowing
-                  const s: UploadStatus = status
-                  const step = currentStep
-                  if (step === 'report_generation') {
-                    if (s === 'failed') return 'failed'
-                    if (s === 'completed') return 'completed'
-                    return 'active'
-                  }
-                  if (s === 'completed') return 'completed'
-                  return 'pending'
-                })()
+                currentStep === 'report_generation'
+                  ? status === 'failed'
+                    ? 'failed'
+                    : status === 'completed'
+                      ? 'completed'
+                      : 'active'
+                  : status === 'completed'
+                    ? 'completed'
+                    : 'pending'
               }`}>
                 <div className="step-indicator">
-                  {(() => {
-                    // Extract to avoid type narrowing
-                    const s: UploadStatus = status
-                    const step = currentStep
-                    if (s === 'failed' && step === 'report_generation') {
-                      return <div className="step-error">✗</div>
-                    }
-                    if (s === 'completed') {
-                      return <div className="step-checkmark">✓</div>
-                    }
-                    if (step === 'report_generation') {
-                      return (
-                        <div className="step-spinner">
-                          <Loader2 className="spinner-icon" />
-                        </div>
-                      )
-                    }
-                    return <div className="step-number">4</div>
-                  })()}
+                  {status === 'failed' && currentStep === 'report_generation' ? (
+                    <div className="step-error">✗</div>
+                  ) : status === 'completed' ? (
+                    <div className="step-checkmark">✓</div>
+                  ) : currentStep === 'report_generation' ? (
+                    <div className="step-spinner">
+                      <Loader2 className="spinner-icon" />
+                    </div>
+                  ) : (
+                    <div className="step-number">4</div>
+                  )}
                 </div>
                 <div className="step-content">
                   <div className="step-title">
