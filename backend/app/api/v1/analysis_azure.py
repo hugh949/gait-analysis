@@ -741,7 +741,14 @@ async def upload_video(
                     except Exception as recreate_error:
                         logger.error(f"[{request_id}] ❌ Failed to recreate analysis: {recreate_error}", exc_info=True)
             
-            background_tasks.add_task(wrapped_process_analysis)
+            if background_tasks is None:
+                # Fallback: use asyncio.create_task if BackgroundTasks not available
+                import asyncio
+                asyncio.create_task(wrapped_process_analysis())
+                logger.info(f"[{request_id}] ✅ Background task scheduled via asyncio.create_task")
+            else:
+                background_tasks.add_task(wrapped_process_analysis)
+                logger.info(f"[{request_id}] ✅ Background task scheduled via background_tasks.add_task")
             
             logger.error(f"[{request_id}] ✅✅✅ BACKGROUND TASK SCHEDULED ✅✅✅")
             logger.info(f"[{request_id}] ✅ Background processing task scheduled for analysis {analysis_id}", extra={"analysis_id": analysis_id})
