@@ -168,7 +168,30 @@ export default function AnalysisUpload() {
             }
           } else {
             console.error('Upload failed with status:', xhr.status, xhr.statusText)
+            console.error('Response text:', xhr.responseText)
+            
+            // Try to extract detailed error from response
             let errorMessage = `Upload failed: ${xhr.status} ${xhr.statusText}`
+            try {
+              const response = JSON.parse(xhr.responseText)
+              if (response.detail) {
+                if (typeof response.detail === 'string') {
+                  errorMessage = `Upload failed: ${xhr.status} - ${response.detail}`
+                } else if (response.detail.message) {
+                  errorMessage = `Upload failed: ${xhr.status} - ${response.detail.message}`
+                  if (response.detail.details) {
+                    errorMessage += `\n\nDetails: ${JSON.stringify(response.detail.details, null, 2)}`
+                  }
+                } else if (response.detail.error) {
+                  errorMessage = `Upload failed: ${xhr.status} - ${response.detail.error}: ${response.detail.message || 'Unknown error'}`
+                }
+              }
+            } catch (e) {
+              // If response isn't JSON, use the raw text if available
+              if (xhr.responseText && xhr.responseText.length > 0) {
+                errorMessage = `Upload failed: ${xhr.status} - ${xhr.responseText.substring(0, 500)}`
+              }
+            }
             try {
               const errorData = JSON.parse(xhr.responseText)
               if (errorData.detail) {
