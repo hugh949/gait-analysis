@@ -862,6 +862,18 @@ async def upload_video(
                 "patient_id": patient_id_val,
                 "created_at": datetime.utcnow().isoformat()
             })
+        except Exception as file_upload_error:
+            # Catch any error in the file upload try block (line 241)
+            logger.error(f"[{request_id}] Error in file upload processing: {file_upload_error}", exc_info=True)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+            raise HTTPException(
+                status_code=500,
+                detail=f"File upload processing failed: {str(file_upload_error)}"
+            )
         
     except HTTPException:
         # Let FastAPI handle HTTPException - don't intercept
