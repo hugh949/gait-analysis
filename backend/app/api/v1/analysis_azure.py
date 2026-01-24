@@ -2744,9 +2744,63 @@ async def list_analyses(
         analyses = await db_service.list_analyses(limit=limit)
         logger.info(f"[{request_id}] Retrieved {len(analyses)} analyses", extra={"count": len(analyses)})
         
+        # Transform database results to match AnalysisDetailResponse model
+        transformed_analyses = []
+        for a in analyses:
+            try:
+                # Ensure all required fields are present with defaults
+                analysis_data = {
+                    'id': a.get('id', ''),
+                    'patient_id': a.get('patient_id'),
+                    'filename': a.get('filename', 'unknown'),
+                    'video_url': a.get('video_url'),
+                    'status': a.get('status', 'idle'),  # Convert to string if needed
+                    'current_step': a.get('current_step'),
+                    'step_progress': a.get('step_progress', 0),
+                    'step_message': a.get('step_message'),
+                    'metrics': a.get('metrics', {}),
+                    'created_at': a.get('created_at'),
+                    'updated_at': a.get('updated_at'),
+                    'video_quality_score': a.get('video_quality_score'),
+                    'video_quality_valid': a.get('video_quality_valid'),
+                    'video_quality_issues': a.get('video_quality_issues'),
+                    'video_quality_recommendations': a.get('video_quality_recommendations'),
+                    'pose_detection_rate': a.get('pose_detection_rate')
+                }
+                
+                # Convert status string to AnalysisStatus enum if needed
+                status_value = analysis_data['status']
+                if isinstance(status_value, str):
+                    # Try to match to enum value
+                    try:
+                        from app.core.schemas import AnalysisStatus
+                        # Map common status strings to enum
+                        status_map = {
+                            'processing': AnalysisStatus.PROCESSING,
+                            'completed': AnalysisStatus.COMPLETED,
+                            'failed': AnalysisStatus.FAILED,
+                            'cancelled': AnalysisStatus.FAILED,  # Map cancelled to failed for now
+                            'idle': AnalysisStatus.IDLE
+                        }
+                        analysis_data['status'] = status_map.get(status_value.lower(), AnalysisStatus.IDLE)
+                    except Exception:
+                        # If enum conversion fails, use string (model will handle it)
+                        pass
+                
+                transformed_analyses.append(AnalysisDetailResponse(**analysis_data))
+            except Exception as transform_error:
+                logger.warning(
+                    f"[{request_id}] Failed to transform analysis {a.get('id', 'unknown')}: {transform_error}",
+                    extra={"analysis_id": a.get('id'), "error": str(transform_error)}
+                )
+                # Skip invalid analyses rather than failing the entire request
+                continue
+        
+        logger.info(f"[{request_id}] Successfully transformed {len(transformed_analyses)} of {len(analyses)} analyses")
+        
         return AnalysisListResponse(
-            analyses=[AnalysisDetailResponse(**a) for a in analyses],
-            total=len(analyses),
+            analyses=transformed_analyses,
+            total=len(transformed_analyses),
             limit=limit
         )
     except Exception as e:
