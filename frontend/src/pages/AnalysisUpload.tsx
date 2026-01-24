@@ -1212,13 +1212,6 @@ export default function AnalysisUpload() {
                     >
                       View Report
                     </button>
-                    <button 
-                      onClick={() => navigate('/view-reports')} 
-                      className="btn btn-secondary"
-                      style={{ minWidth: '150px' }}
-                    >
-                      View All Reports
-                    </button>
                   </div>
                 </div>
               )}

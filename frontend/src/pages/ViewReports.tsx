@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Calendar, ExternalLink } from 'lucide-react'
+import { FileText, Calendar, Trash2, RefreshCw } from 'lucide-react'
 import './ViewReports.css'
 
 const getApiUrl = () => {
@@ -42,6 +42,7 @@ export default function ViewReports() {
   const [analyses, setAnalyses] = useState<Analysis[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchAnalyses = async () => {
@@ -121,6 +122,64 @@ export default function ViewReports() {
     }
   }
 
+  const handleDelete = async (analysisId: string, filename?: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${filename || analysisId}"? This action cannot be undone.`)) {
+      return
+    }
+
+    setDeletingId(analysisId)
+    try {
+      const response = await fetch(`${API_URL}/api/v1/analysis/${analysisId}`, {
+        method: 'DELETE',
+        headers: {
+          'Accept': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to delete analysis' }))
+        throw new Error(errorData.message || `Failed to delete: ${response.statusText}`)
+      }
+
+      // Remove from local state
+      setAnalyses(analyses.filter(a => a.id !== analysisId))
+    } catch (err: any) {
+      console.error('Error deleting analysis:', err)
+      alert(`Failed to delete analysis: ${err.message || 'Unknown error'}`)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleRefresh = () => {
+    setLoading(true)
+    setError(null)
+    fetch(`${API_URL}/api/v1/analysis/list`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch analyses: ${response.statusText}`)
+        }
+        return response.json()
+      })
+      .then(data => {
+        const completed = (data.analyses || [])
+          .filter((a: Analysis) => a.status === 'completed')
+          .sort((a: Analysis, b: Analysis) => {
+            const dateA = a.updated_at || a.created_at || ''
+            const dateB = b.updated_at || b.created_at || ''
+            return dateB.localeCompare(dateA)
+          })
+        setAnalyses(completed)
+      })
+      .catch(err => {
+        console.error('Error fetching analyses:', err)
+        setError(err.message || 'Failed to load reports')
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }
+
   if (loading) {
     return (
       <div className="view-reports-page">
@@ -146,8 +205,20 @@ export default function ViewReports() {
   return (
     <div className="view-reports-page">
       <div className="page-header">
-        <h1>View Reports</h1>
-        <p>View all your completed gait analysis reports. Latest reports appear first.</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div>
+            <h1>View Reports</h1>
+            <p>View all your completed gait analysis reports. Latest reports appear first.</p>
+          </div>
+          <button 
+            onClick={handleRefresh} 
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {analyses.length === 0 ? (
@@ -155,7 +226,7 @@ export default function ViewReports() {
           <FileText size={64} className="empty-icon" />
           <h2>No reports yet</h2>
           <p>You haven't completed any analyses yet. Upload a video to get started.</p>
-          <button onClick={() => navigate('/upload')} className="btn btn-primary">
+          <button onClick={() => navigate('/')} className="btn btn-primary">
             Upload Video
           </button>
         </div>
@@ -233,19 +304,23 @@ export default function ViewReports() {
                   onClick={() => navigate(`/report/${analysis.id}`)}
                   className="btn btn-primary"
                 >
-                  View Full Report
+                  View Report
                 </button>
-                {analysis.video_url && (
-                  <a
-                    href={analysis.video_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-secondary"
-                  >
-                    <ExternalLink size={16} />
-                    View Video
-                  </a>
-                )}
+                <button
+                  onClick={() => handleDelete(analysis.id, analysis.filename)}
+                  className="btn btn-danger"
+                  disabled={deletingId === analysis.id}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.5rem',
+                    backgroundColor: '#e74c3c',
+                    color: 'white'
+                  }}
+                >
+                  <Trash2 size={16} />
+                  {deletingId === analysis.id ? 'Deleting...' : 'Delete'}
+                </button>
               </div>
             </div>
           ))}
@@ -253,7 +328,7 @@ export default function ViewReports() {
       )}
 
       <div className="page-actions">
-        <button onClick={() => navigate('/upload')} className="btn btn-secondary">
+        <button onClick={() => navigate('/')} className="btn btn-secondary">
           Upload New Video
         </button>
       </div>

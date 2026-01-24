@@ -4,12 +4,12 @@ import './Layout.css'
 
 interface LayoutProps {
   children: ReactNode
-  selectedAudience?: string
-  setSelectedAudience?: (audience: string) => void
 }
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
+  const isHome = location.pathname === '/'
+  const isReports = location.pathname === '/reports' || location.pathname.startsWith('/report/')
 
   return (
     <div className="layout">
@@ -18,14 +18,14 @@ export default function Layout({ children }: LayoutProps) {
           <h1>Gait Analysis Platform</h1>
           <nav className="nav">
             <Link 
-              to="/upload" 
-              className={location.pathname === '/upload' ? 'active' : ''}
+              to="/" 
+              className={isHome ? 'active' : ''}
             >
-              Upload Video
+              New Analysis
             </Link>
             <Link 
-              to="/view-reports" 
-              className={location.pathname === '/view-reports' || location.pathname.startsWith('/report/') ? 'active' : ''}
+              to="/reports" 
+              className={isReports ? 'active' : ''}
             >
               View Reports
             </Link>
@@ -35,9 +35,6 @@ export default function Layout({ children }: LayoutProps) {
       <main className="main-content">
         {children}
       </main>
-      <footer className="footer">
-        <p>Gait Analysis Platform - Clinical-Grade Mobility Monitoring</p>
-      </footer>
     </div>
   )
 }
