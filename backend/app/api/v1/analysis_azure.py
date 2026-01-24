@@ -829,11 +829,11 @@ async def upload_video(
                         'status': 'failed',
                         'step_message': f'Failed to schedule analysis: {str(e)}'
                     })
-            except:
-                pass
-            logger.error(f"[{request_id}] Failed to schedule video analysis: {e}", exc_info=True)
-            # Don't fail the upload - analysis is created, just log the error
-            # The analysis will remain in 'processing' status
+                except:
+                    pass
+                logger.error(f"[{request_id}] Failed to schedule video analysis: {e}", exc_info=True)
+                # Don't fail the upload - analysis is created, just log the error
+                # The analysis will remain in 'processing' status
                 
             upload_total_duration = time.time() - upload_request_start
             logger.info(
