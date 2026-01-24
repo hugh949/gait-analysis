@@ -568,9 +568,67 @@ class AzureSQLService:
                         logger.warning(f"CREATE: Could not verify analysis in file after creation: {e}")
             
             if not verification_passed:
-                logger.warning(f"CREATE: Could not verify analysis {analysis_id} in file after creation, but it exists in memory. File may have sync issues.")
-                # Still return True because in-memory storage has it - file will catch up
-                return True
+                logger.error(f"CREATE: ❌❌❌ CRITICAL: Analysis {analysis_id} created but could not be verified in file ❌❌❌")
+                logger.error(f"CREATE: 🔍🔍🔍 DIAGNOSTIC: File verification failure 🔍🔍🔍")
+                logger.error(f"CREATE: 🔍   - Analysis ID: {analysis_id}")
+                logger.error(f"CREATE: 🔍   - In-memory: {analysis_id in AzureSQLService._mock_storage}")
+                logger.error(f"CREATE: 🔍   - File path: {file_path}")
+                logger.error(f"CREATE: 🔍   - File exists: {os.path.exists(file_path)}")
+                if os.path.exists(file_path):
+                    try:
+                        with open(file_path, 'r') as f:
+                            if HAS_FCNTL:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                                try:
+                                    file_data = json.load(f)
+                                    logger.error(f"CREATE: 🔍   - File has {len(file_data)} analyses")
+                                    logger.error(f"CREATE: 🔍   - Analysis in file: {analysis_id in file_data}")
+                                    if analysis_id not in file_data:
+                                        logger.error(f"CREATE: 🔍   - File analysis IDs: {list(file_data.keys())[:10]}")
+                                finally:
+                                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                            else:
+                                file_data = json.load(f)
+                                logger.error(f"CREATE: 🔍   - File has {len(file_data)} analyses")
+                                logger.error(f"CREATE: 🔍   - Analysis in file: {analysis_id in file_data}")
+                                if analysis_id not in file_data:
+                                    logger.error(f"CREATE: 🔍   - File analysis IDs: {list(file_data.keys())[:10]}")
+                    except Exception as read_error:
+                        logger.error(f"CREATE: 🔍   - Could not read file: {read_error}")
+                
+                # CRITICAL: Try one more save attempt with force sync
+                logger.warning(f"CREATE: ⚠️ Attempting final save with force sync...")
+                try:
+                    self._save_mock_storage(force_sync=True)
+                    time.sleep(0.5)  # Wait for sync
+                    # Check again
+                    if os.path.exists(file_path):
+                        with open(file_path, 'r') as f:
+                            if HAS_FCNTL:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                                try:
+                                    verify_data = json.load(f)
+                                    if isinstance(verify_data, dict) and analysis_id in verify_data:
+                                        verification_passed = True
+                                        logger.info(f"CREATE: ✅ Final verification passed after force sync")
+                                finally:
+                                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                            else:
+                                verify_data = json.load(f)
+                                if isinstance(verify_data, dict) and analysis_id in verify_data:
+                                    verification_passed = True
+                                    logger.info(f"CREATE: ✅ Final verification passed after force sync")
+                except Exception as final_save_error:
+                    logger.error(f"CREATE: ❌ Final save attempt failed: {final_save_error}", exc_info=True)
+                
+                if not verification_passed:
+                    # CRITICAL: Analysis exists in memory but not in file - this will cause "Analysis not found" errors
+                    # Return False to indicate creation failed, so upload endpoint can retry or fail gracefully
+                    logger.error(f"CREATE: ❌❌❌ RETURNING FALSE: Analysis not verifiable in file ❌❌❌")
+                    return False
+                
+                # If we got here, verification passed on retry
+                logger.info(f"CREATE: ✅ Analysis verified after retry")
             
             return True
         

@@ -496,8 +496,44 @@ async def upload_video(
             if not verification_passed:
                 logger.error(f"[{request_id}] ❌❌❌ CRITICAL: Analysis verification failed after {max_verification_attempts} attempts ❌❌❌")
                 logger.error(f"[{request_id}] ❌ Analysis may not be visible to other requests")
-                # Still continue - the analysis exists in memory, file will catch up
-                logger.warning(f"[{request_id}] ⚠️ Continuing despite verification failure - analysis exists in memory")
+                logger.error(f"[{request_id}] 🔍🔍🔍 DIAGNOSTIC: Verification failure details 🔍🔍🔍")
+                logger.error(f"[{request_id}] 🔍   - Analysis ID: {analysis_id}")
+                logger.error(f"[{request_id}] 🔍   - In-memory check: {analysis_id in (db_service._mock_storage if db_service and db_service._use_mock else {})}")
+                if db_service and db_service._use_mock:
+                    logger.error(f"[{request_id}] 🔍   - In-memory storage size: {len(db_service._mock_storage)}")
+                    logger.error(f"[{request_id}] 🔍   - In-memory IDs: {list(db_service._mock_storage.keys())[:10]}")
+                    logger.error(f"[{request_id}] 🔍   - Storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}")
+                    import os
+                    storage_file = getattr(db_service, '_mock_storage_file', None)
+                    if storage_file:
+                        logger.error(f"[{request_id}] 🔍   - File exists: {os.path.exists(storage_file)}")
+                        if os.path.exists(storage_file):
+                            logger.error(f"[{request_id}] 🔍   - File size: {os.path.getsize(storage_file)} bytes")
+                
+                # CRITICAL: Try one more time with a longer delay
+                logger.warning(f"[{request_id}] ⚠️ Attempting final verification with extended delay...")
+                await asyncio.sleep(1.0)  # Wait 1 second for file system sync
+                try:
+                    final_check = await db_service.get_analysis(analysis_id)
+                    if final_check and final_check.get('id') == analysis_id:
+                        logger.info(f"[{request_id}] ✅ Final verification passed after extended delay")
+                        verification_passed = True
+                    else:
+                        logger.error(f"[{request_id}] ❌ Final verification still failed - analysis not found")
+                except Exception as final_error:
+                    logger.error(f"[{request_id}] ❌ Final verification exception: {final_error}", exc_info=True)
+                
+                if not verification_passed:
+                    # CRITICAL: Don't continue if verification fails - this causes "Analysis not found" errors
+                    logger.error(f"[{request_id}] ❌❌❌ FAILING REQUEST: Analysis verification failed - cannot proceed ❌❌❌")
+                    raise DatabaseError(
+                        "Analysis was created but could not be verified as readable. This may indicate a file system sync issue.",
+                        details={
+                            "analysis_id": analysis_id,
+                            "verification_attempts": max_verification_attempts,
+                            "diagnostic": "Analysis may have been lost during creation. Check backend logs for 🔍🔍🔍 diagnostic messages."
+                        }
+                    )
             
             logger.error(f"[{request_id}] ========== ANALYSIS RECORD CREATION COMPLETE ==========")
         except Exception as e:
