@@ -1061,7 +1061,7 @@ export default function AnalysisUpload() {
                       Est. remaining: {Math.floor(((Date.now() - startTime) / stepProgress) * (100 - stepProgress) / 1000)}s
                     </span>
                   )}
-                  {(status === 'processing' || status === 'completed') && currentStep === 'report_generation' && stepProgress >= 98 && (
+                  {((status === 'processing' || (status as UploadStatus) === 'completed') && currentStep === 'report_generation' && stepProgress >= 98) && (
                     <span className="finalizing-indicator">
                       Finalizing...
                     </span>
