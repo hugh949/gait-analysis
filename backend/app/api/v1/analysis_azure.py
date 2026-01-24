@@ -139,6 +139,7 @@ async def upload_video(
     view_type: str = Query("front", description="Camera view type"),
     reference_length_mm: Optional[float] = Query(None, gt=0, le=10000, description="Reference length in mm"),
     fps: float = Query(30.0, gt=0, le=120, description="Video frames per second"),
+    processing_fps: Optional[float] = Query(None, gt=0, le=60, description="Processing frame rate (frames per second to process). Lower = faster analysis, higher = more accurate. Default: auto-detect based on video length."),
     request: Request = None,
     background_tasks: BackgroundTasks = None
 ) -> JSONResponse:
@@ -271,9 +272,9 @@ async def upload_video(
                 )
             
             # Read file in chunks with size validation
-            # CRITICAL: Use smaller chunks for large files to prevent memory issues
-            # This prevents worker crashes during large file uploads
-            chunk_size = 256 * 1024  # 256KB chunks (further reduced to minimize memory pressure)
+            # OPTIMIZED: Use larger chunks for faster upload while still preventing memory issues
+            # Increased from 256KB to 1MB for better throughput, especially for small files
+            chunk_size = 1024 * 1024  # 1MB chunks - optimized for faster uploads
             chunk_count = 0
             last_log_time = time.time()
             try:
@@ -759,7 +760,8 @@ async def upload_video(
                             patient_id,
                             view_type_str,
                             reference_length_mm,
-                            fps
+                            fps,
+                            processing_fps  # Pass processing_fps to background task
                         )
                         logger.error(f"[{request_id}] 🔧✅ Background task completed successfully")
                     except Exception as wrapper_error:
@@ -980,7 +982,8 @@ async def process_analysis_azure(
     patient_id: Optional[str],
     view_type: str,
     reference_length_mm: Optional[float],
-    fps: float
+    fps: float,
+    processing_fps: Optional[float] = None
 ) -> None:
     """
     Background task to process video analysis using advanced gait analysis
@@ -1006,7 +1009,7 @@ async def process_analysis_azure(
     logger.error(f"[{request_id}] ========== PROCESSING TASK FUNCTION CALLED ==========")
     logger.error(f"[{request_id}] Analysis ID: {analysis_id}")
     logger.error(f"[{request_id}] Video URL: {video_url}")
-    logger.error(f"[{request_id}] Parameters: view_type={view_type}, fps={fps}, reference_length_mm={reference_length_mm}")
+    logger.error(f"[{request_id}] Parameters: view_type={view_type}, fps={fps}, processing_fps={processing_fps}, reference_length_mm={reference_length_mm}")
     logger.error(f"[{request_id}] Timestamp: {datetime.utcnow().isoformat()}")
     logger.error(f"[{request_id}] Process ID: {os.getpid()}")
     logger.error(f"[{request_id}] Thread ID: {threading.current_thread().ident}, Thread Name: {threading.current_thread().name}")
@@ -1032,7 +1035,7 @@ async def process_analysis_azure(
                 "fps": fps
             }
         )
-        logger.info(f"[{request_id}] 📋 Processing parameters: view_type={view_type}, fps={fps}, reference_length_mm={reference_length_mm}")
+        logger.info(f"[{request_id}] 📋 Processing parameters: view_type={view_type}, fps={fps}, processing_fps={processing_fps}, reference_length_mm={reference_length_mm}")
         
         # CRITICAL: Ensure analysis exists before starting processing
         # This prevents "Analysis not found" errors during processing
@@ -1842,7 +1845,8 @@ async def process_analysis_azure(
                 reference_length_mm=reference_length_mm,
                 view_type=view_type,
                 progress_callback=progress_callback,
-                analysis_id=analysis_id  # Pass analysis_id for checkpoint management
+                analysis_id=analysis_id,  # Pass analysis_id for checkpoint management
+                processing_fps=processing_fps  # Pass user-selected processing frame rate
             )
             
             # Stop periodic monitoring

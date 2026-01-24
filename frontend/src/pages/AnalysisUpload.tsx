@@ -49,6 +49,8 @@ export default function AnalysisUpload() {
     recommendations: string[]
     poseDetectionRate: number | null
   } | null>(null)
+  const [processingFrameRate, setProcessingFrameRate] = useState<number | null>(null) // Will be set from video
+  const [videoFPS, setVideoFPS] = useState<number | null>(null) // Actual video FPS
   const navigate = useNavigate()
   const xhrRef = useRef<XMLHttpRequest | null>(null)
   const pollTimeoutRef = useRef<number | null>(null) // setTimeout ID for any scheduled poll (including retries)
@@ -63,7 +65,7 @@ export default function AnalysisUpload() {
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       // Check if there's already a video processing
       if (status === 'uploading' || status === 'processing') {
@@ -71,8 +73,16 @@ export default function AnalysisUpload() {
         e.target.value = '' // Clear the input
         return
       }
-      setFile(e.target.files[0])
+      const selectedFile = e.target.files[0]
+      setFile(selectedFile)
       setError(null)
+      
+      // Extract video FPS to use as default processing rate
+      // Note: Browser API doesn't directly expose FPS, so we'll let backend detect it
+      // For now, set a reasonable default and let user choose
+      // Backend will use actual video FPS for processing
+      setVideoFPS(null) // Will be detected by backend
+      setProcessingFrameRate(15) // Default to balanced 15 fps - user can change
     }
   }
 
@@ -123,6 +133,10 @@ export default function AnalysisUpload() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('view_type', 'front')
+      // Add processing frame rate if user selected one, otherwise let backend auto-detect
+      if (processingFrameRate !== null) {
+        formData.append('processing_fps', processingFrameRate.toString())
+      }
 
       console.log('Creating XHR request...')
       const xhr = new XMLHttpRequest()
@@ -852,6 +866,85 @@ export default function AnalysisUpload() {
             <p><strong>Selected file:</strong> {file.name}</p>
             <p><strong>Size:</strong> {(file.size / (1024 * 1024)).toFixed(2)} MB</p>
             <p><strong>Type:</strong> {file.type}</p>
+          </div>
+        )}
+
+        {/* Processing Frame Rate Selection */}
+        {file && status === 'idle' && (
+          <div className="processing-options" style={{
+            marginTop: '1.5rem',
+            padding: '1.5rem',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '8px',
+            border: '1px solid #e9ecef'
+          }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#2c3e50' }}>
+              ⚡ Processing Speed Options
+            </h3>
+            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
+              <strong>Note:</strong> Video frame rate will be auto-detected. Choose processing rate below (lower = faster, higher = more accurate).
+            </p>
+            <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#666' }}>
+              Choose how many frames per second to process. Lower rates = faster analysis, higher rates = more accurate results.
+            </p>
+            <div className="frame-rate-options" style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '0.75rem'
+            }}>
+              {[
+                { value: 10, label: '10 fps', desc: 'Fastest', time: '~2-3 min' },
+                { value: 15, label: '15 fps', desc: 'Balanced', time: '~3-5 min' },
+                { value: 20, label: '20 fps', desc: 'Accurate', time: '~4-7 min' },
+                { value: 30, label: '30 fps', desc: 'Most Accurate', time: '~6-10 min' }
+              ].map((option) => {
+                // Highlight if it matches video FPS (or closest to it)
+                const isVideoFPS = videoFPS && Math.abs(videoFPS - option.value) < 5
+                const isDefault = processingFrameRate === option.value
+                
+                return (
+                  <label
+                    key={option.value}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '1rem',
+                      border: isDefault ? '2px solid #3498db' : isVideoFPS ? '2px solid #2ecc71' : '1px solid #ddd',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      backgroundColor: isDefault ? '#e8f4f8' : isVideoFPS ? '#f0f9f4' : 'white',
+                      transition: 'all 0.2s',
+                      position: 'relative'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="processingFrameRate"
+                      value={option.value}
+                      checked={processingFrameRate === option.value}
+                      onChange={(e) => setProcessingFrameRate(Number(e.target.value))}
+                      style={{ marginBottom: '0.5rem' }}
+                    />
+                    <strong style={{ fontSize: '1rem', color: '#2c3e50' }}>{option.label}</strong>
+                    {isVideoFPS && !isDefault && (
+                      <span style={{ fontSize: '0.7rem', color: '#2ecc71', fontWeight: '600', marginTop: '0.25rem' }}>
+                        (Video FPS)
+                      </span>
+                    )}
+                    {isDefault && (
+                      <span style={{ fontSize: '0.7rem', color: '#3498db', fontWeight: '600', marginTop: '0.25rem' }}>
+                        (Selected)
+                      </span>
+                    )}
+                    <span style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>{option.desc}</span>
+                    <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>{option.time}</span>
+                  </label>
+                )
+              })}
+            </div>
+            <p style={{ margin: '1rem 0 0 0', fontSize: '0.85rem', color: '#666', fontStyle: 'italic' }}>
+              💡 Tip: Processing at 20-30 fps gives best accuracy. Lower rates (10-15 fps) are faster but may reduce precision. The system will use the video's actual frame rate for calculations.
+            </p>
           </div>
         )}
 

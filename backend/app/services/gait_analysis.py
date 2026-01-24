@@ -272,7 +272,8 @@ class GaitAnalysisService:
         reference_length_mm: Optional[float] = None,
         view_type: str = "front",
         progress_callback: Optional[Callable] = None,
-        analysis_id: Optional[str] = None
+        analysis_id: Optional[str] = None,
+        processing_fps: Optional[float] = None
     ) -> Dict:
         """
         Analyze video for gait parameters with maximum accuracy
@@ -334,7 +335,8 @@ class GaitAnalysisService:
             fps,
             reference_length_mm,
             view_type,
-            sync_progress_callback
+            sync_progress_callback,
+            processing_fps
         )
         
         # Monitor progress updates
@@ -423,7 +425,8 @@ class GaitAnalysisService:
         fps: float,
         reference_length_mm: Optional[float],
         view_type: str,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        processing_fps: Optional[float] = None
     ) -> Dict:
         """Synchronous video processing with MediaPipe 0.10.x"""
         logger.info(f"_process_video_sync started: video_path={video_path}, fps={fps}, view_type={view_type}")
@@ -455,27 +458,35 @@ class GaitAnalysisService:
         frame_timestamps = []
         frame_count = 0
         
-        # OPTIMIZED for files under 100MB: Process more frames for better accuracy
-        # For smaller files, we can afford to process more frames since videos are shorter
-        # This improves accuracy while still completing in reasonable time
-        # Calculate estimated video duration to determine optimal frame processing rate
-        estimated_duration = total_frames / video_fps if video_fps > 0 else 0
-        
-        # For videos under 30 seconds (typical for <100MB files), process more frames
-        if estimated_duration <= 30:
-            # Process ~20 frames per second for short videos (higher accuracy)
-            frame_skip = max(1, int(video_fps / 20))
-            logger.info(f"Short video detected ({estimated_duration:.1f}s) - using high-accuracy mode: frame_skip={frame_skip} (~20 fps)")
-        elif estimated_duration <= 60:
-            # Process ~15 frames per second for medium videos
-            frame_skip = max(1, int(video_fps / 15))
-            logger.info(f"Medium video detected ({estimated_duration:.1f}s) - using balanced mode: frame_skip={frame_skip} (~15 fps)")
+        # Calculate frame skip based on user-selected processing_fps or auto-detect
+        if processing_fps is not None and processing_fps > 0:
+            # User specified processing frame rate - use it directly
+            frame_skip = max(1, int(video_fps / processing_fps))
+            logger.info(f"Using user-specified processing rate: {processing_fps} fps (frame_skip={frame_skip})")
         else:
-            # Process ~10 frames per second for longer videos (balance speed/accuracy)
-            frame_skip = max(1, int(video_fps / 10))
-            logger.info(f"Long video detected ({estimated_duration:.1f}s) - using speed-optimized mode: frame_skip={frame_skip} (~10 fps)")
+            # Auto-detect optimal frame processing rate based on video duration
+            # OPTIMIZED for files under 100MB: Process more frames for better accuracy
+            # For smaller files, we can afford to process more frames since videos are shorter
+            # This improves accuracy while still completing in reasonable time
+            # Calculate estimated video duration to determine optimal frame processing rate
+            estimated_duration = total_frames / video_fps if video_fps > 0 else 0
+            
+            # For videos under 30 seconds (typical for <100MB files), process more frames
+            if estimated_duration <= 30:
+                # Process ~20 frames per second for short videos (higher accuracy)
+                frame_skip = max(1, int(video_fps / 20))
+                logger.info(f"Short video detected ({estimated_duration:.1f}s) - using high-accuracy mode: frame_skip={frame_skip} (~20 fps)")
+            elif estimated_duration <= 60:
+                # Process ~15 frames per second for medium videos
+                frame_skip = max(1, int(video_fps / 15))
+                logger.info(f"Medium video detected ({estimated_duration:.1f}s) - using balanced mode: frame_skip={frame_skip} (~15 fps)")
+            else:
+                # Process ~10 frames per second for longer videos (balance speed/accuracy)
+                frame_skip = max(1, int(video_fps / 10))
+                logger.info(f"Long video detected ({estimated_duration:.1f}s) - using speed-optimized mode: frame_skip={frame_skip} (~10 fps)")
         
-        logger.info(f"Starting frame processing: frame_skip={frame_skip}, total_frames={total_frames}, estimated_duration={estimated_duration:.1f}s")
+        estimated_duration = total_frames / video_fps if video_fps > 0 else 0
+        logger.info(f"Starting frame processing: frame_skip={frame_skip}, total_frames={total_frames}, estimated_duration={estimated_duration:.1f}s, processing_rate={video_fps/frame_skip:.1f} fps")
         
         while cap.isOpened():
             ret, frame = cap.read()
