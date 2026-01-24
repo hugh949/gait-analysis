@@ -103,6 +103,12 @@ class AnalysisDetailResponse(BaseModel):
     metrics: Optional[Dict[str, Any]]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    # Video quality validation fields
+    video_quality_score: Optional[float] = Field(None, ge=0, le=100, description="Video quality score (0-100)")
+    video_quality_valid: Optional[bool] = Field(None, description="Whether video quality is sufficient for accurate analysis")
+    video_quality_issues: Optional[List[str]] = Field(None, description="List of video quality issues detected")
+    video_quality_recommendations: Optional[List[str]] = Field(None, description="Recommendations to improve video quality")
+    pose_detection_rate: Optional[float] = Field(None, ge=0, le=1, description="Pose detection success rate (0-1)")
     
     class Config:
         use_enum_values = True

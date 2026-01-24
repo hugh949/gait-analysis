@@ -42,6 +42,13 @@ export default function AnalysisUpload() {
   const [currentStep, setCurrentStep] = useState<ProcessingStep | null>(null)
   const [stepProgress, setStepProgress] = useState<number>(0)
   const [stepMessage, setStepMessage] = useState<string>('')
+  const [videoQuality, setVideoQuality] = useState<{
+    score: number | null
+    isValid: boolean | null
+    issues: string[]
+    recommendations: string[]
+    poseDetectionRate: number | null
+  } | null>(null)
   const navigate = useNavigate()
   const xhrRef = useRef<XMLHttpRequest | null>(null)
   const pollingIntervalRef = useRef<number | null>(null)
@@ -402,6 +409,17 @@ export default function AnalysisUpload() {
         const data = await response.json()
         const analysisStatus = data.status
 
+        // Update video quality info if available
+        if (data.video_quality_score !== undefined || data.video_quality_issues) {
+          setVideoQuality({
+            score: data.video_quality_score ?? null,
+            isValid: data.video_quality_valid ?? null,
+            issues: data.video_quality_issues || [],
+            recommendations: data.video_quality_recommendations || [],
+            poseDetectionRate: data.pose_detection_rate ?? null
+          })
+        }
+        
         // Use real progress data from backend
         if (analysisStatus === 'processing') {
           // Update with real backend progress
@@ -699,6 +717,61 @@ export default function AnalysisUpload() {
         {error && status !== 'processing' && (
           <div className="error">
             {error}
+          </div>
+        )}
+        
+        {/* Video Quality Information */}
+        {videoQuality && (status === 'processing' || status === 'completed') && (
+          <div className={`video-quality-info ${videoQuality.isValid === false ? 'quality-warning' : videoQuality.score && videoQuality.score >= 80 ? 'quality-good' : 'quality-moderate'}`}>
+            <div className="quality-header">
+              <strong>📹 Video Quality Assessment</strong>
+              {videoQuality.score !== null && (
+                <span className="quality-score">
+                  Score: {videoQuality.score.toFixed(0)}%
+                  {videoQuality.isValid === false && ' ⚠️'}
+                  {videoQuality.isValid === true && videoQuality.score >= 80 && ' ✅'}
+                </span>
+              )}
+            </div>
+            
+            {videoQuality.poseDetectionRate !== null && (
+              <div className="quality-metric">
+                <span>Pose Detection Rate: {(videoQuality.poseDetectionRate * 100).toFixed(0)}%</span>
+              </div>
+            )}
+            
+            {videoQuality.issues && videoQuality.issues.length > 0 && (
+              <div className="quality-issues">
+                <strong>Issues Detected:</strong>
+                <ul>
+                  {videoQuality.issues.slice(0, 3).map((issue, idx) => (
+                    <li key={idx}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {videoQuality.recommendations && videoQuality.recommendations.length > 0 && videoQuality.isValid === false && (
+              <div className="quality-recommendations">
+                <strong>💡 Recommendations for Better Results:</strong>
+                <ul>
+                  {videoQuality.recommendations.slice(0, 5).map((rec, idx) => (
+                    <li key={idx}>{rec}</li>
+                  ))}
+                </ul>
+                <div className="quality-note">
+                  <strong>For Geriatric Functional Mobility Assessment:</strong>
+                  <ul>
+                    <li>Record 5-10 seconds of continuous walking</li>
+                    <li>Use side view for best gait parameter visibility</li>
+                    <li>Ensure person walks at comfortable pace</li>
+                    <li>Include at least 3-4 complete gait cycles</li>
+                    <li>Record on flat, level surface</li>
+                    <li>Good lighting with person clearly visible</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         )}
         

@@ -364,6 +364,50 @@ async def upload_video(
         analysis_id = str(uuid.uuid4())
         logger.info(f"[{request_id}] Generated analysis ID: {analysis_id}")
         
+        # CRITICAL: Validate video quality BEFORE uploading to blob storage
+        # This allows us to provide immediate feedback to user
+        logger.info(f"[{request_id}] 🔍 Validating video quality for gait analysis...")
+        quality_result = None
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                from app.services.video_quality_validator import VideoQualityValidator
+                from app.services.gait_analysis import get_gait_analysis_service
+                
+                gait_service = get_gait_analysis_service()
+                validator = VideoQualityValidator(
+                    pose_landmarker=gait_service.pose_landmarker if gait_service else None
+                )
+                
+                quality_result = validator.validate_video_for_gait_analysis(
+                    video_path=tmp_path,
+                    view_type=view_type.value if hasattr(view_type, 'value') else str(view_type),
+                    sample_frames=20
+                )
+                
+                logger.info(f"[{request_id}] 🔍 Video quality validation results:")
+                logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
+                logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
+                logger.info(f"[{request_id}] 🔍   - Pose detection rate: {quality_result.get('pose_detection_rate', 0)*100:.1f}%")
+                logger.info(f"[{request_id}] 🔍   - Critical joints detected: {quality_result.get('critical_joints_detected', False)}")
+                logger.info(f"[{request_id}] 🔍   - Issues found: {len(quality_result.get('issues', []))}")
+                
+                if quality_result.get('issues'):
+                    logger.warning(f"[{request_id}] ⚠️ Video quality issues detected:")
+                    for issue in quality_result.get('issues', []):
+                        logger.warning(f"[{request_id}] ⚠️   - {issue}")
+                
+                if not quality_result.get('is_valid', False):
+                    logger.error(f"[{request_id}] ❌❌❌ VIDEO QUALITY INSUFFICIENT FOR ACCURATE GAIT ANALYSIS ❌❌❌")
+                    logger.error(f"[{request_id}] Quality score: {quality_result.get('quality_score', 0):.1f}% (minimum: 60%)")
+                    logger.error(f"[{request_id}] Top recommendations:")
+                    for rec in quality_result.get('recommendations', [])[:3]:
+                        logger.error(f"[{request_id}]   - {rec}")
+            except Exception as validation_error:
+                logger.warning(f"[{request_id}] Video quality validation failed (non-critical): {validation_error}", exc_info=True)
+                logger.warning(f"[{request_id}] Processing will continue, but video quality is unknown")
+        else:
+            logger.warning(f"[{request_id}] ⚠️ Cannot validate video quality - temp file not accessible")
+        
         # Upload to Azure Blob Storage (or keep temp file in mock mode)
         try:
             if storage_service is None:
@@ -403,6 +447,7 @@ async def upload_video(
         logger.error(f"[{request_id}] File name: {file.filename}")
         
         try:
+            # Include quality validation results in analysis data
             analysis_data = {
                 'id': analysis_id,
                 'patient_id': patient_id,
@@ -413,6 +458,25 @@ async def upload_video(
                 'step_progress': 0,
                 'step_message': 'Upload complete. Starting analysis...'
             }
+            
+            # Add quality validation results if available
+            if quality_result:
+                analysis_data.update({
+                    'video_quality_score': quality_result.get('quality_score', 0),
+                    'video_quality_valid': quality_result.get('is_valid', False),
+                    'video_quality_issues': quality_result.get('issues', []),
+                    'video_quality_recommendations': quality_result.get('recommendations', []),
+                    'pose_detection_rate': quality_result.get('pose_detection_rate', 0)
+                })
+                
+                # Update step message with quality info
+                quality_score = quality_result.get('quality_score', 0)
+                if quality_score < 60:
+                    analysis_data['step_message'] = f'Upload complete. Video quality: {quality_score:.0f}% - May affect accuracy. Starting analysis...'
+                elif quality_score < 80:
+                    analysis_data['step_message'] = f'Upload complete. Video quality: {quality_score:.0f}% - Good. Starting analysis...'
+                else:
+                    analysis_data['step_message'] = f'Upload complete. Video quality: {quality_score:.0f}% - Excellent. Starting analysis...'
             
             logger.error(f"[{request_id}] About to call db_service.create_analysis")
             logger.error(f"[{request_id}] db_service available: {db_service is not None}")
@@ -432,6 +496,10 @@ async def upload_video(
                 f"[{request_id}] Created analysis record",
                 extra={"analysis_id": analysis_id, "patient_id": patient_id}
             )
+            
+            # Quality validation already done above - results are in analysis_data
+            if quality_result:
+                logger.info(f"[{request_id}] ✅ Video quality validation completed and stored in analysis record")
             
             # CRITICAL: Verify the analysis is immediately readable in MEMORY before returning
             # In-memory storage is the source of truth - check it first

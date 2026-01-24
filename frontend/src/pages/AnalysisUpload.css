@@ -96,6 +96,115 @@
   text-align: center;
 }
 
+/* Video Quality Information */
+.video-quality-info {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border-radius: var(--apple-border-radius-small);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  border: 2px solid;
+}
+
+.video-quality-info.quality-good {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: var(--apple-green);
+  color: #1d4d1f;
+}
+
+.video-quality-info.quality-moderate {
+  background: rgba(255, 149, 0, 0.1);
+  border-color: #FF9500;
+  color: #8b5a00;
+}
+
+.video-quality-info.quality-warning {
+  background: rgba(255, 59, 48, 0.1);
+  border-color: #FF3B30;
+  color: #8b1a1a;
+}
+
+.quality-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.quality-score {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.video-quality-info.quality-good .quality-score {
+  color: var(--apple-green);
+}
+
+.video-quality-info.quality-moderate .quality-score {
+  color: #FF9500;
+}
+
+.video-quality-info.quality-warning .quality-score {
+  color: #FF3B30;
+}
+
+.quality-metric {
+  margin: 0.5rem 0;
+  font-size: 0.8125rem;
+  color: var(--apple-text-secondary);
+}
+
+.quality-issues,
+.quality-recommendations {
+  margin-top: 1rem;
+}
+
+.quality-issues strong,
+.quality-recommendations strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.quality-issues ul,
+.quality-recommendations ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.quality-issues li,
+.quality-recommendations li {
+  margin: 0.375rem 0;
+  font-size: 0.8125rem;
+}
+
+.quality-note {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: var(--apple-border-radius-small);
+  border-left: 3px solid var(--apple-blue);
+}
+
+.quality-note strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--apple-text-primary);
+  font-size: 0.875rem;
+}
+
+.quality-note ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.quality-note li {
+  margin: 0.25rem 0;
+  font-size: 0.8125rem;
+  color: var(--apple-text-secondary);
+}
+
 /* Upload Progress */
 .progress-container {
   margin-top: 1.5rem;
