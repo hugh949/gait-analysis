@@ -547,9 +547,16 @@ async def upload_video(
                 if quality_result:
                     logger.info(f"[{request_id}] ✅ Video quality validation completed and stored in analysis record")
                 
-                # CRITICAL: Verify the analysis is immediately readable in MEMORY before returning
-                # In-memory storage is the source of truth - check it first
-                if db_service and db_service._use_mock:
+                # CRITICAL: Verify the analysis is immediately readable before returning
+                # Check which database backend is being used
+                use_table_storage = hasattr(db_service, '_use_table') and db_service._use_table
+                use_sql = not use_table_storage and not db_service._use_mock
+                use_mock = db_service._use_mock
+                
+                logger.info(f"[{request_id}] Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
+                
+                # For mock storage: Verify in-memory storage (source of truth)
+                if use_mock:
                     analysis_in_memory = analysis_id in db_service._mock_storage
                     logger.error(f"[{request_id}] 🔍🔍🔍 IMMEDIATE VERIFICATION (MEMORY) 🔍🔍🔍")
                     logger.error(f"[{request_id}] 🔍 Analysis ID: {analysis_id}")
@@ -576,31 +583,38 @@ async def upload_video(
                         logger.error(f"[{request_id}] ✅✅✅ Analysis confirmed in memory ✅✅✅")
                 
                 # CRITICAL: Verify the analysis is immediately readable before returning
-                # This ensures the file is fully written and visible to other requests
+                # This ensures the database write is complete and visible to other requests
+                # Different backends have different consistency guarantees:
+                # - Table Storage: Eventual consistency (may need retries)
+                # - SQL: Strong consistency (usually immediate)
+                # - Mock: File-based (may need retries for filesystem sync)
                 verification_attempts = 0
-                max_verification_attempts = 10  # Increased from 5 to 10
+                max_verification_attempts = 10 if use_table_storage else 5  # More retries for Table Storage
                 verification_passed = False
                 
                 while verification_attempts < max_verification_attempts:
                     try:
                         verification_analysis = await db_service.get_analysis(analysis_id)
                         if verification_analysis and verification_analysis.get('id') == analysis_id:
-                            logger.error(f"[{request_id}] ✅✅✅ VERIFIED: Analysis is immediately readable after creation (attempt {verification_attempts + 1}) ✅✅✅")
+                            logger.info(f"[{request_id}] ✅✅✅ VERIFIED: Analysis is immediately readable after creation (attempt {verification_attempts + 1}) ✅✅✅")
+                            logger.info(f"[{request_id}] Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
                             verification_passed = True
                             break
                         else:
                             verification_attempts += 1
                             if verification_attempts < max_verification_attempts:
-                                logger.warning(f"[{request_id}] ⚠️ Analysis not yet readable (attempt {verification_attempts}/{max_verification_attempts}), retrying...")
-                                await asyncio.sleep(0.2)  # Increased from 0.1s to 0.2s
+                                delay = 0.3 if use_table_storage else 0.2  # Longer delay for Table Storage
+                                logger.warning(f"[{request_id}] ⚠️ Analysis not yet readable (attempt {verification_attempts}/{max_verification_attempts}), retrying in {delay}s...")
+                                await asyncio.sleep(delay)
                                 continue
                             else:
                                 logger.error(f"[{request_id}] ❌ Analysis not immediately readable after {max_verification_attempts} attempts")
                     except Exception as e:
                         verification_attempts += 1
                         if verification_attempts < max_verification_attempts:
-                            logger.warning(f"[{request_id}] ⚠️ Verification read failed (attempt {verification_attempts}/{max_verification_attempts}), retrying: {e}")
-                            await asyncio.sleep(0.2)
+                            delay = 0.3 if use_table_storage else 0.2
+                            logger.warning(f"[{request_id}] ⚠️ Verification read failed (attempt {verification_attempts}/{max_verification_attempts}), retrying in {delay}s: {e}")
+                            await asyncio.sleep(delay)
                             continue
                         else:
                             logger.error(f"[{request_id}] ❌ Could not verify analysis after creation: {e}", exc_info=True)
@@ -610,13 +624,15 @@ async def upload_video(
                     logger.error(f"[{request_id}] ❌ Analysis may not be visible to other requests")
                     logger.error(f"[{request_id}] 🔍🔍🔍 DIAGNOSTIC: Verification failure details 🔍🔍🔍")
                     logger.error(f"[{request_id}] 🔍   - Analysis ID: {analysis_id}")
-                    logger.error(f"[{request_id}] 🔍   - In-memory check: {analysis_id in (db_service._mock_storage if db_service and db_service._use_mock else {})}")
-                    if db_service and db_service._use_mock:
-                        logger.error(f"[{request_id}] 🔍   - In-memory storage size: {len(db_service._mock_storage)}")
-                        logger.error(f"[{request_id}] 🔍   - In-memory IDs: {list(db_service._mock_storage.keys())[:10]}")
-                        logger.error(f"[{request_id}] 🔍   - Storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}")
-                        storage_file = getattr(db_service, '_mock_storage_file', None)
-                        if storage_file:
+                    logger.error(f"[{request_id}] 🔍   - Database backend: Table Storage={use_table_storage}, SQL={use_sql}, Mock={use_mock}")
+                    if use_mock:
+                        logger.error(f"[{request_id}] 🔍   - In-memory check: {analysis_id in (db_service._mock_storage if db_service else {})}")
+                        if db_service:
+                            logger.error(f"[{request_id}] 🔍   - In-memory storage size: {len(db_service._mock_storage)}")
+                            logger.error(f"[{request_id}] 🔍   - In-memory IDs: {list(db_service._mock_storage.keys())[:10]}")
+                            logger.error(f"[{request_id}] 🔍   - Storage file: {getattr(db_service, '_mock_storage_file', 'unknown')}")
+                            storage_file = getattr(db_service, '_mock_storage_file', None)
+                            if storage_file:
                             logger.error(f"[{request_id}] 🔍   - File exists: {os.path.exists(storage_file)}")
                             if os.path.exists(storage_file):
                                 logger.error(f"[{request_id}] 🔍   - File size: {os.path.getsize(storage_file)} bytes")

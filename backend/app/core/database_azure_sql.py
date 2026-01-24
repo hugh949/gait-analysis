@@ -10,6 +10,7 @@ import os
 import json
 import time
 import threading
+import asyncio
 
 # File locking (optional - may not be available on all systems)
 try:
@@ -510,6 +511,32 @@ class AzureSQLService:
                 
                 self.table_client.create_entity(entity=entity)
                 logger.info(f"✅ Created analysis {analysis_id} in Table Storage")
+                
+                # CRITICAL: Verify the entity was actually created and is immediately readable
+                # Table Storage can have eventual consistency, so we verify with retries
+                verification_passed = False
+                max_verify_attempts = 5
+                for verify_attempt in range(max_verify_attempts):
+                    try:
+                        await asyncio.sleep(0.1 * (verify_attempt + 1))  # Progressive delay: 0.1s, 0.2s, 0.3s, 0.4s, 0.5s
+                        verify_entity = self.table_client.get_entity(
+                            partition_key='analyses',
+                            row_key=analysis_id
+                        )
+                        if verify_entity and verify_entity.get('RowKey') == analysis_id:
+                            verification_passed = True
+                            logger.info(f"✅ Verified analysis {analysis_id} is readable in Table Storage (attempt {verify_attempt + 1})")
+                            break
+                    except Exception as verify_error:
+                        if verify_attempt < max_verify_attempts - 1:
+                            logger.debug(f"Verification attempt {verify_attempt + 1} failed, retrying: {verify_error}")
+                        else:
+                            logger.warning(f"Could not verify analysis in Table Storage after {max_verify_attempts} attempts: {verify_error}")
+                
+                if not verification_passed:
+                    logger.warning(f"Analysis {analysis_id} created in Table Storage but verification failed - may have eventual consistency delay")
+                    # Still return True because creation succeeded, just verification had issues
+                
                 return True
             except Exception as e:
                 logger.error(f"Failed to create analysis in Table Storage: {e}", exc_info=True)
@@ -956,35 +983,61 @@ class AzureSQLService:
         """
         # Priority 1: Use Table Storage if available (most reliable)
         if hasattr(self, '_use_table') and self._use_table:
-            try:
-                from azure.core.exceptions import ResourceNotFoundError
-                entity = self.table_client.get_entity(
-                    partition_key='analyses',
-                    row_key=analysis_id
-                )
-                
-                analysis = {
-                    'id': entity.get('RowKey'),
-                    'patient_id': entity.get('patient_id'),
-                    'filename': entity.get('filename'),
-                    'video_url': entity.get('video_url'),
-                    'status': entity.get('status'),
-                    'current_step': entity.get('current_step'),
-                    'step_progress': entity.get('step_progress', 0),
-                    'step_message': entity.get('step_message'),
-                    'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
-                    'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
-                    'created_at': entity.get('created_at'),
-                    'updated_at': entity.get('updated_at')
-                }
-                logger.debug(f"✅ Retrieved analysis {analysis_id} from Table Storage")
-                return analysis
-            except ResourceNotFoundError:
-                logger.debug(f"Analysis {analysis_id} not found in Table Storage")
-                return None
-            except Exception as e:
-                logger.error(f"Failed to get analysis from Table Storage: {e}", exc_info=True)
-                return None
+            # CRITICAL: Add retry logic for Table Storage to handle eventual consistency
+            # Table Storage can have slight delays, especially after creation
+            max_retries = 5
+            last_error = None
+            
+            for retry in range(max_retries):
+                try:
+                    from azure.core.exceptions import ResourceNotFoundError
+                    import asyncio
+                    
+                    # Add small delay for retries (except first attempt)
+                    if retry > 0:
+                        await asyncio.sleep(0.2 * retry)  # Progressive delay: 0.2s, 0.4s, 0.6s, 0.8s
+                    
+                    entity = self.table_client.get_entity(
+                        partition_key='analyses',
+                        row_key=analysis_id
+                    )
+                    
+                    analysis = {
+                        'id': entity.get('RowKey'),
+                        'patient_id': entity.get('patient_id'),
+                        'filename': entity.get('filename'),
+                        'video_url': entity.get('video_url'),
+                        'status': entity.get('status'),
+                        'current_step': entity.get('current_step'),
+                        'step_progress': entity.get('step_progress', 0),
+                        'step_message': entity.get('step_message'),
+                        'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
+                        'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
+                        'created_at': entity.get('created_at'),
+                        'updated_at': entity.get('updated_at')
+                    }
+                    logger.debug(f"✅ Retrieved analysis {analysis_id} from Table Storage (attempt {retry + 1})")
+                    return analysis
+                except ResourceNotFoundError:
+                    if retry < max_retries - 1:
+                        logger.debug(f"Analysis {analysis_id} not found in Table Storage (attempt {retry + 1}/{max_retries}), retrying...")
+                        last_error = "ResourceNotFoundError"
+                        continue
+                    else:
+                        logger.debug(f"Analysis {analysis_id} not found in Table Storage after {max_retries} attempts")
+                        return None
+                except Exception as e:
+                    last_error = str(e)
+                    if retry < max_retries - 1:
+                        logger.warning(f"Failed to get analysis from Table Storage (attempt {retry + 1}/{max_retries}): {e}, retrying...")
+                        continue
+                    else:
+                        logger.error(f"Failed to get analysis from Table Storage after {max_retries} attempts: {e}", exc_info=True)
+                        return None
+            
+            # Should not reach here, but just in case
+            logger.error(f"Failed to get analysis {analysis_id} from Table Storage: {last_error}")
+            return None
         
         if self._use_mock:
             import os

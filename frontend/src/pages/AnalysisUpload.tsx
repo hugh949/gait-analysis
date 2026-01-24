@@ -306,7 +306,10 @@ export default function AnalysisUpload() {
       // Store analysis ID in localStorage for resume capability
       localStorage.setItem('lastAnalysisId', id)
 
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // CRITICAL: Wait longer before polling to allow database write to complete
+      // Table Storage can have eventual consistency, SQL is usually immediate, mock needs filesystem sync
+      // Use 2 seconds to be safe for all backends
+      await new Promise(resolve => setTimeout(resolve, 2000))
 
       pollAnalysisStatus(id)
     } catch (err: any) {
