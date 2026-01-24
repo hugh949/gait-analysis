@@ -38,6 +38,12 @@ from app.core.schemas import (
 
 router = APIRouter()
 
+# CRITICAL: Add a simple test endpoint to verify router is working
+@router.get("/test")
+async def test_endpoint():
+    """Test endpoint to verify router is registered"""
+    return {"status": "ok", "message": "Analysis router is working", "endpoint": "/api/v1/analysis/test"}
+
 # Initialize services with error handling
 storage_service: Optional[AzureStorageService] = None
 vision_service: Optional[AzureVisionService] = None
