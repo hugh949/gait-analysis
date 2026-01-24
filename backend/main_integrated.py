@@ -383,6 +383,42 @@ async def api_health_check():
         "version": "3.0.0"
     }
 
+# CRITICAL: Add startup event to verify routes after app is fully initialized
+@app.on_event("startup")
+async def verify_routes_on_startup():
+    """Verify all routes are registered after app startup"""
+    logger.info("=" * 80)
+    logger.info("🔍 STARTUP: Verifying all routes are registered...")
+    logger.info("=" * 80)
+    
+    api_routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            route_path = route.path
+            if '/api/' in route_path:
+                methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+                api_routes.append((methods, route_path))
+                logger.info(f"  API Route: {methods} {route_path}")
+    
+    logger.info(f"✅ Total API routes found: {len(api_routes)}")
+    
+    # Check for critical endpoints
+    upload_found = any('/upload' in path and '/api/v1/analysis' in path for _, path in api_routes)
+    test_found = any('/test' in path and '/api/v1/analysis' in path for _, path in api_routes)
+    
+    if upload_found:
+        logger.info("✅ Upload endpoint is registered")
+    else:
+        logger.error("❌ CRITICAL: Upload endpoint NOT found!")
+        logger.error("❌ This will cause 404 errors on file uploads!")
+    
+    if test_found:
+        logger.info("✅ Test endpoint is registered")
+    else:
+        logger.error("❌ CRITICAL: Test endpoint NOT found!")
+    
+    logger.info("=" * 80)
+
 # CRITICAL: Add diagnostic endpoint to check router status
 @app.get("/api/v1/debug/routes")
 async def debug_routes():
