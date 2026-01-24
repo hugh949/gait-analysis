@@ -392,30 +392,55 @@ async def verify_routes_on_startup():
     logger.info("=" * 80)
     
     api_routes = []
+    all_routes = []
     for route in app.routes:
         if hasattr(route, 'path'):
             route_path = route.path
+            methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+            all_routes.append((methods, route_path))
             if '/api/' in route_path:
-                methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
                 api_routes.append((methods, route_path))
                 logger.info(f"  API Route: {methods} {route_path}")
     
+    logger.info(f"✅ Total routes found: {len(all_routes)}")
     logger.info(f"✅ Total API routes found: {len(api_routes)}")
     
     # Check for critical endpoints
     upload_found = any('/upload' in path and '/api/v1/analysis' in path for _, path in api_routes)
     test_found = any('/test' in path and '/api/v1/analysis' in path for _, path in api_routes)
+    diagnostics_found = any('/diagnostics' in path and '/api/v1/analysis' in path for _, path in api_routes)
     
     if upload_found:
         logger.info("✅ Upload endpoint is registered")
     else:
         logger.error("❌ CRITICAL: Upload endpoint NOT found!")
         logger.error("❌ This will cause 404 errors on file uploads!")
+        logger.error("❌ All routes:")
+        for methods, path in all_routes:
+            logger.error(f"  {methods} {path}")
     
     if test_found:
         logger.info("✅ Test endpoint is registered")
     else:
         logger.error("❌ CRITICAL: Test endpoint NOT found!")
+    
+    if diagnostics_found:
+        logger.info("✅ Diagnostics endpoint is registered")
+    else:
+        logger.warning("⚠️ Diagnostics endpoint NOT found (non-critical)")
+    
+    # Try to call diagnostics endpoint to verify router is working
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://localhost:8000/api/v1/analysis/diagnostics", timeout=2.0)
+            if response.status_code == 200:
+                logger.info("✅ Diagnostics endpoint is accessible")
+                logger.info(f"   Router info: {response.json()}")
+            else:
+                logger.warning(f"⚠️ Diagnostics endpoint returned {response.status_code}")
+    except Exception as e:
+        logger.debug(f"Could not test diagnostics endpoint (expected in some environments): {e}")
     
     logger.info("=" * 80)
 

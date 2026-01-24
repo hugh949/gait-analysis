@@ -45,6 +45,33 @@ async def test_endpoint():
     """Test endpoint to verify router is registered"""
     return {"status": "ok", "message": "Analysis router is working", "endpoint": "/api/v1/analysis/test"}
 
+# CRITICAL: Add a diagnostic endpoint to check router state
+@router.get("/diagnostics")
+async def diagnostics_endpoint():
+    """Diagnostic endpoint to check router and route registration"""
+    routes_info = []
+    if hasattr(router, 'routes'):
+        for route in router.routes:
+            route_info = {}
+            if hasattr(route, 'path'):
+                route_info['path'] = route.path
+            if hasattr(route, 'methods'):
+                route_info['methods'] = list(route.methods) if hasattr(route.methods, '__iter__') else [str(route.methods)]
+            routes_info.append(route_info)
+    
+    return {
+        "router_type": str(type(router)),
+        "has_routes_attr": hasattr(router, 'routes'),
+        "route_count": len(router.routes) if hasattr(router, 'routes') else 0,
+        "routes": routes_info,
+        "services": {
+            "storage": storage_service is not None,
+            "vision": vision_service is not None,
+            "database": db_service is not None,
+            "gait_analysis": _gait_analysis_service is not None
+        }
+    }
+
 # CRITICAL: Log router creation to verify it exists
 logger.info(f"🔍 Router created: {router}, type: {type(router)}")
 logger.info(f"🔍 Router has routes attr: {hasattr(router, 'routes')}")
@@ -88,10 +115,14 @@ def initialize_services():
 # CRITICAL: Log router state before service initialization
 logger.info(f"🔍 Router before service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
+# CRITICAL: Log router state before service initialization
+logger.info(f"🔍 Router before service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
+
 # Initialize services at module load
 # CRITICAL: Don't raise on failure - allow app to start even if services fail
 # Services will be initialized lazily when needed
 # IMPORTANT: Service initialization errors should NOT prevent routes from being registered
+# CRITICAL: Wrap in try/except to ensure router is still exported even if services fail
 try:
     initialize_services()
 except Exception as e:
@@ -99,6 +130,8 @@ except Exception as e:
     # Don't raise - allow app to start, services will be None and handled gracefully
     # This prevents the entire app from failing to start if one service has issues
     logger.warning("App will continue to start, but some services may be unavailable")
+    # CRITICAL: Ensure router is still valid even if services fail
+    logger.warning(f"Router state after service init error: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
 
 # CRITICAL: Log router state after service initialization to verify routes still exist
 logger.info(f"🔍 Router after service init: {len(router.routes) if hasattr(router, 'routes') else 'no routes attr'} routes")
