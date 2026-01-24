@@ -531,18 +531,34 @@ async def api_health_check():
 async def debug_routes():
     """Debug endpoint to check registered routes"""
     routes_info = []
+    upload_endpoints = []
+    api_routes = []
+    
     for route in app.routes:
         if hasattr(route, 'path'):
             route_info = {"path": route.path}
             if hasattr(route, 'methods'):
                 route_info["methods"] = list(route.methods) if hasattr(route.methods, '__iter__') else [str(route.methods)]
             routes_info.append(route_info)
+            
+            # Check for upload endpoints
+            if "/upload" in route.path and "/api/v1/analysis" in route.path:
+                upload_endpoints.append(route_info)
+            
+            # Check for API routes
+            if "/api/" in route.path:
+                api_routes.append(route_info)
     
     return {
         "total_routes": len(routes_info),
-        "routes": routes_info,
+        "total_api_routes": len(api_routes),
+        "upload_endpoints": upload_endpoints,
+        "api_routes": api_routes[:20],  # Limit to first 20 for readability
         "analysis_router_registered": any("/api/v1/analysis" in r.get("path", "") for r in routes_info),
-        "upload_endpoint_exists": any("/upload" in r.get("path", "") and "/api/v1/analysis" in r.get("path", "") for r in routes_info)
+        "upload_endpoint_exists": len(upload_endpoints) > 0,
+        "exact_upload_path": any(r.get("path") == "/api/v1/analysis/upload" for r in routes_info),
+        "router_import_status": "success" if analysis_router else "failed",
+        "router_type": str(type(analysis_router)) if analysis_router else "None"
     }
 
 
