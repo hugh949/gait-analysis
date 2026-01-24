@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import os
+import asyncio
 
 # Import request logging middleware
 try:
@@ -108,46 +109,69 @@ async def lifespan(app: FastAPI):
     logger.info("Services: Azure Blob Storage, Computer Vision, SQL Database")
     logger.info("Serving: API + React Frontend")
     
-    # Cancel all processing analyses on startup
-    try:
-        logger.info("🛑 Cancelling any processing analyses from previous session...")
-        from app.core.database_azure_sql import AzureSQLService
-        db_service = AzureSQLService()
-        
-        if db_service:
-            # Get all analyses
-            all_analyses = await db_service.list_analyses(limit=1000)
+    # Cancel all processing analyses on startup (non-blocking)
+    # Use asyncio.create_task to avoid blocking startup if database is slow
+    async def cancel_processing_on_startup():
+        try:
+            logger.info("🛑 Cancelling any processing analyses from previous session...")
+            from app.core.database_azure_sql import AzureSQLService
+            db_service = AzureSQLService()
             
-            # Filter for processing analyses
-            processing_analyses = [a for a in all_analyses if a.get('status') == 'processing']
-            
-            if processing_analyses:
-                logger.info(f"Found {len(processing_analyses)} processing analyses to cancel")
-                cancelled_count = 0
-                for analysis in processing_analyses:
-                    analysis_id = analysis.get('id')
-                    try:
-                        success = await db_service.update_analysis(analysis_id, {
-                            'status': 'cancelled',
-                            'current_step': analysis.get('current_step', 'unknown'),
-                            'step_progress': analysis.get('step_progress', 0),
-                            'step_message': 'Analysis cancelled on app restart'
-                        })
-                        if success:
-                            cancelled_count += 1
-                            logger.info(f"✅ Cancelled analysis: {analysis_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to cancel analysis {analysis_id}: {e}")
-                
-                logger.info(f"✅ Cancelled {cancelled_count} of {len(processing_analyses)} processing analyses")
+            if db_service:
+                try:
+                    # Get all analyses with timeout
+                    all_analyses = await asyncio.wait_for(
+                        db_service.list_analyses(limit=1000),
+                        timeout=10.0  # 10 second timeout
+                    )
+                    
+                    # Filter for processing analyses
+                    processing_analyses = [a for a in all_analyses if a.get('status') == 'processing']
+                    
+                    if processing_analyses:
+                        logger.info(f"Found {len(processing_analyses)} processing analyses to cancel")
+                        cancelled_count = 0
+                        for analysis in processing_analyses:
+                            analysis_id = analysis.get('id')
+                            try:
+                                success = await asyncio.wait_for(
+                                    db_service.update_analysis(analysis_id, {
+                                        'status': 'cancelled',
+                                        'current_step': analysis.get('current_step', 'unknown'),
+                                        'step_progress': analysis.get('step_progress', 0),
+                                        'step_message': 'Analysis cancelled on app restart'
+                                    }),
+                                    timeout=5.0  # 5 second timeout per update
+                                )
+                                if success:
+                                    cancelled_count += 1
+                                    logger.info(f"✅ Cancelled analysis: {analysis_id}")
+                            except asyncio.TimeoutError:
+                                logger.warning(f"Timeout cancelling analysis {analysis_id}")
+                            except Exception as e:
+                                logger.warning(f"Failed to cancel analysis {analysis_id}: {e}")
+                        
+                        logger.info(f"✅ Cancelled {cancelled_count} of {len(processing_analyses)} processing analyses")
+                    else:
+                        logger.info("No processing analyses found to cancel")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout getting analyses list - skipping cancellation")
+                except Exception as e:
+                    logger.warning(f"Error getting analyses list: {e}")
             else:
-                logger.info("No processing analyses found to cancel")
-        else:
-            logger.warning("Database service not available - skipping cancellation of processing analyses")
+                logger.warning("Database service not available - skipping cancellation of processing analyses")
+        except Exception as e:
+            logger.error(f"Error in startup cancellation task: {e}", exc_info=True)
+            # Don't fail startup if cancellation fails
+            logger.warning("Continuing startup despite cancellation error")
+    
+    # Start cancellation task in background (non-blocking)
+    try:
+        import asyncio
+        asyncio.create_task(cancel_processing_on_startup())
+        logger.info("Started background task to cancel processing analyses")
     except Exception as e:
-        logger.error(f"Error cancelling processing analyses on startup: {e}", exc_info=True)
-        # Don't fail startup if cancellation fails
-        logger.warning("Continuing startup despite cancellation error")
+        logger.warning(f"Failed to start cancellation task: {e} - continuing startup")
     
     logger.info("Service ready and accepting requests")
     
