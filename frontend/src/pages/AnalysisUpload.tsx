@@ -538,12 +538,26 @@ export default function AnalysisUpload() {
         if (analysisStatus === 'completed') {
           // Backend has marked analysis as completed - this is the natural completion
           // Trust the backend's status and display completion
+          // CRITICAL: Keep screen showing with View Report button - don't clear
           setStatus('completed')
           setCurrentStep('report_generation')
           setStepProgress(100)
           setStepMessage(data.step_message || 'Analysis complete! Report ready.')
+          
+          // Ensure video quality is set if available
+          if (data.video_quality_score !== undefined || data.video_quality_issues) {
+            setVideoQuality({
+              score: data.video_quality_score ?? null,
+              isValid: data.video_quality_valid ?? null,
+              issues: data.video_quality_issues || [],
+              recommendations: data.video_quality_recommendations || [],
+              poseDetectionRate: data.pose_detection_rate ?? null
+            })
+          }
+          
           clearPollTimeout()
           console.log('✅ Analysis completed naturally - backend set status to completed')
+          // DON'T clear state - keep showing completion screen with View Report button
         } else if (analysisStatus === 'processing') {
           // CRITICAL: Handle case where stepProgress=100 but status is still 'processing'
           // This happens when backend says "complete" but database update hasn't finished
@@ -765,7 +779,19 @@ export default function AnalysisUpload() {
               setCurrentStep('report_generation')
               setStepProgress(100)
               setStepMessage('Analysis complete! Report ready.')
-              return // Don't clear - show completion
+              
+              // Set video quality if available
+              if (data.video_quality_score !== undefined || data.video_quality_issues) {
+                setVideoQuality({
+                  score: data.video_quality_score ?? null,
+                  isValid: data.video_quality_valid ?? null,
+                  issues: data.video_quality_issues || [],
+                  recommendations: data.video_quality_recommendations || [],
+                  poseDetectionRate: data.pose_detection_rate ?? null
+                })
+              }
+              
+              return // Don't clear - show completion with View Report button
             }
           }
         } catch (err) {
@@ -774,8 +800,14 @@ export default function AnalysisUpload() {
         }
       }
       
-      // Clear all state - start fresh
-      setStatus('idle')
+      // Only clear state if we're not resuming a completed or active analysis
+      // This prevents clearing the screen when user navigates back to upload page
+      // after an analysis has completed
+      const shouldClear = true // Only clear if no active/completed analysis found
+      
+      if (shouldClear) {
+        // Clear all state - start fresh
+        setStatus('idle')
       setProgress(0)
       setCurrentStep(null)
       setStepProgress(0)
@@ -1005,34 +1037,36 @@ export default function AnalysisUpload() {
             
             {videoQuality.issues && videoQuality.issues.length > 0 && (
               <div className="quality-issues">
-                <strong>Issues Detected:</strong>
-                <ul>
-                  {videoQuality.issues.slice(0, 3).map((issue, idx) => (
-                    <li key={idx}>{issue}</li>
+                <strong>🔍 Quality Issues Detected:</strong>
+                <ul style={{ marginTop: '0.5rem' }}>
+                  {videoQuality.issues.map((issue, idx) => (
+                    <li key={idx} style={{ marginBottom: '0.5rem', lineHeight: '1.5' }}>{issue}</li>
                   ))}
                 </ul>
               </div>
             )}
             
-            {videoQuality.recommendations && videoQuality.recommendations.length > 0 && videoQuality.isValid === false && (
-              <div className="quality-recommendations">
-                <strong>💡 Recommendations for Better Results:</strong>
-                <ul>
-                  {videoQuality.recommendations.slice(0, 5).map((rec, idx) => (
-                    <li key={idx}>{rec}</li>
+            {videoQuality.recommendations && videoQuality.recommendations.length > 0 && (
+              <div className="quality-recommendations" style={{ marginTop: videoQuality.isValid === false ? '1rem' : '0.5rem' }}>
+                <strong>{videoQuality.isValid === false ? '💡 How to Fix These Issues:' : '💡 Recommendations for Best Results:'}</strong>
+                <ul style={{ marginTop: '0.5rem' }}>
+                  {videoQuality.recommendations.map((rec, idx) => (
+                    <li key={idx} style={{ marginBottom: '0.4rem', lineHeight: '1.5' }}>{rec}</li>
                   ))}
                 </ul>
-                <div className="quality-note">
-                  <strong>For Geriatric Functional Mobility Assessment:</strong>
-                  <ul>
-                    <li>Record 5-10 seconds of continuous walking</li>
-                    <li>Use side view for best gait parameter visibility</li>
-                    <li>Ensure person walks at comfortable pace</li>
-                    <li>Include at least 3-4 complete gait cycles</li>
-                    <li>Record on flat, level surface</li>
-                    <li>Good lighting with person clearly visible</li>
-                  </ul>
-                </div>
+                {videoQuality.isValid === false && (
+                  <div className="quality-note" style={{ marginTop: '1rem' }}>
+                    <strong>📋 Quick Checklist for Geriatric Functional Mobility Assessment:</strong>
+                    <ul style={{ marginTop: '0.5rem' }}>
+                      <li>✅ Record 5-10 seconds of continuous walking</li>
+                      <li>✅ Use side view for best gait parameter visibility</li>
+                      <li>✅ Ensure person walks at comfortable pace</li>
+                      <li>✅ Include at least 3-4 complete gait cycles</li>
+                      <li>✅ Record on flat, level surface</li>
+                      <li>✅ Good lighting with person clearly visible</li>
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1353,27 +1387,66 @@ export default function AnalysisUpload() {
         )}
 
 
-        <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            console.log('Upload button clicked, file:', file?.name, 'Status:', status)
-            if (file && status !== 'uploading' && status !== 'processing') {
-              handleUpload()
-            } else {
-              console.warn('Upload prevented - file:', file, 'status:', status)
-            }
-          }}
-          disabled={!file || status === 'uploading' || status === 'processing'}
-          className="btn btn-primary"
-          style={{ 
-            marginTop: '1rem',
-            cursor: (!file || status === 'uploading' || status === 'processing') ? 'not-allowed' : 'pointer',
-            opacity: (!file || status === 'uploading' || status === 'processing') ? 0.6 : 1
-          }}
-        >
-          {status === 'uploading' ? `Uploading... ${Math.round(progress)}%` : status === 'processing' ? 'Processing...' : 'Upload and Analyze'}
-        </button>
+        {/* Only show upload button if not completed - completed state shows View Report button instead */}
+        {status !== 'completed' && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              console.log('Upload button clicked, file:', file?.name, 'Status:', status)
+              if (file && status !== 'uploading' && status !== 'processing') {
+                handleUpload()
+              } else {
+                console.warn('Upload prevented - file:', file, 'status:', status)
+              }
+            }}
+            disabled={!file || status === 'uploading' || status === 'processing'}
+            className="btn btn-primary"
+            style={{ 
+              marginTop: '1rem',
+              cursor: (!file || status === 'uploading' || status === 'processing') ? 'not-allowed' : 'pointer',
+              opacity: (!file || status === 'uploading' || status === 'processing') ? 0.6 : 1
+            }}
+          >
+            {status === 'uploading' ? `Uploading... ${Math.round(progress)}%` : status === 'processing' ? 'Processing...' : 'Upload and Analyze'}
+          </button>
+        )}
+        
+        {/* Show option to upload new video after completion */}
+        {status === 'completed' && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              // Reset to allow new upload
+              setStatus('idle')
+              setProgress(0)
+              setCurrentStep(null)
+              setStepProgress(0)
+              setStepMessage('')
+              setAnalysisId(null)
+              setFile(null)
+              setError(null)
+              setVideoQuality(null)
+              setProcessingFrameRate(null)
+              setVideoFPS(null)
+              progressRef.current = 0
+              localStorage.removeItem('lastAnalysisId')
+              const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+              if (fileInput) {
+                fileInput.value = ''
+              }
+            }}
+            className="btn btn-secondary"
+            style={{ 
+              marginTop: '1rem',
+              fontSize: '0.9rem',
+              padding: '0.75rem 1.5rem'
+            }}
+          >
+            Upload New Video
+          </button>
+        )}
       </div>
     </div>
   )

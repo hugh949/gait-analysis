@@ -140,21 +140,56 @@ class VideoQualityValidator:
                 return validation_result
             
             if fps < 15:
-                validation_result["issues"].append(f"Video frame rate too low ({fps:.1f} fps) - need at least 15 fps for accurate gait analysis")
+                validation_result["issues"].append(
+                    f"❌ CRITICAL: Video frame rate is too low ({fps:.1f} fps) - "
+                    f"need at least 15 fps for accurate gait analysis. "
+                    f"Current rate will cause missed steps and inaccurate timing measurements."
+                )
+                validation_result["recommendations"].extend([
+                    f"🔍 SPECIFIC ISSUE: Frame rate {fps:.1f} fps is below minimum 15 fps requirement",
+                    "💡 SOLUTION: Record video at 30 fps or higher for best results",
+                    "💡 HOW TO FIX: Check camera settings - most smartphones default to 30 fps",
+                    "💡 IMPACT: Low frame rate reduces accuracy of step timing, cadence, and walking speed calculations"
+                ])
+            elif fps < 24:
                 validation_result["recommendations"].append(
-                    "Record video at 30 fps or higher for best results. Lower frame rates reduce gait analysis accuracy."
+                    f"⚠️ Frame rate is moderate ({fps:.1f} fps) - 30 fps recommended for optimal accuracy"
                 )
             
             if duration < 3:
-                validation_result["issues"].append(f"Video too short ({duration:.1f}s) - need at least 3 seconds for gait analysis")
+                validation_result["issues"].append(
+                    f"❌ CRITICAL: Video is too short ({duration:.1f} seconds) - "
+                    f"need at least 3 seconds for gait analysis. "
+                    f"Current duration is insufficient to capture complete gait cycles."
+                )
+                validation_result["recommendations"].extend([
+                    f"🔍 SPECIFIC ISSUE: Video duration {duration:.1f}s is below minimum 3s requirement",
+                    "💡 SOLUTION: Record at least 5-10 seconds of continuous walking",
+                    "💡 WHY: Need to capture at least 3-4 complete gait cycles (one cycle = left step + right step)",
+                    "💡 FOR GERIATRIC ASSESSMENT: 5-10 seconds recommended to capture natural walking pattern",
+                    "💡 IMPACT: Short videos may miss gait cycles, causing inaccurate or failed analysis"
+                ])
+            elif duration < 5:
                 validation_result["recommendations"].append(
-                    "Record at least 3-5 seconds of walking. For geriatric assessment, 5-10 seconds is recommended."
+                    f"⚠️ Video duration is adequate ({duration:.1f}s) but 5-10 seconds recommended for geriatric assessment"
                 )
             
             if width < 320 or height < 240:
-                validation_result["issues"].append(f"Video resolution too low ({width}x{height}) - need at least 640x480")
+                validation_result["issues"].append(
+                    f"❌ CRITICAL: Video resolution is too low ({width}x{height} pixels) - "
+                    f"need at least 640x480 for accurate pose detection. "
+                    f"Current resolution will cause poor joint detection and inaccurate measurements."
+                )
+                validation_result["recommendations"].extend([
+                    f"🔍 SPECIFIC ISSUE: Resolution {width}x{height} is below minimum 640x480 requirement",
+                    "💡 SOLUTION: Record video at 640x480 or higher resolution (720p or 1080p recommended)",
+                    "💡 HOW TO FIX: Check camera settings - use 'HD' or 'Full HD' quality setting",
+                    "💡 IMPACT: Low resolution reduces pose detection accuracy, especially for small joints like ankles",
+                    "💡 RECOMMENDED: 1280x720 (720p) or 1920x1080 (1080p) for best results"
+                ])
+            elif width < 640 or height < 480:
                 validation_result["recommendations"].append(
-                    "Record video at 640x480 or higher resolution. Higher resolution improves pose detection accuracy."
+                    f"⚠️ Resolution is moderate ({width}x{height}) - 720p (1280x720) or higher recommended for optimal accuracy"
                 )
             
             # Step 3: Sample frames and test pose detection
@@ -164,51 +199,100 @@ class VideoQualityValidator:
                 validation_result["critical_joints_detected"] = pose_detection_results["critical_joints_detected"]
                 validation_result["sample_analysis"] = pose_detection_results["sample_analysis"]
                 
-                # Analyze pose detection quality
+                # Analyze pose detection quality with specific, actionable feedback
+                detection_rate_pct = pose_detection_results['detection_rate'] * 100
                 if pose_detection_results["detection_rate"] < 0.3:
                     validation_result["issues"].append(
-                        f"Pose detection rate too low ({pose_detection_results['detection_rate']*100:.1f}%) - "
-                        f"AI cannot reliably detect person in video"
+                        f"❌ CRITICAL: Pose detection rate is too low ({detection_rate_pct:.1f}%) - "
+                        f"AI cannot reliably detect the person in {100-detection_rate_pct:.1f}% of video frames. "
+                        f"This will cause inaccurate or failed gait analysis."
                     )
                     validation_result["recommendations"].extend([
-                        "Ensure person is clearly visible and fully in frame",
-                        "Use good lighting - avoid shadows and backlighting",
-                        "Record against a contrasting background (person should stand out)",
-                        "Ensure person is walking, not standing still",
-                        "Avoid occlusions (objects blocking the person)"
+                        f"🔍 SPECIFIC ISSUE: Person not detected in {100-detection_rate_pct:.1f}% of frames",
+                        "💡 SOLUTION 1: Ensure person is clearly visible and fully in frame throughout entire video",
+                        "💡 SOLUTION 2: Use bright, even lighting - avoid shadows on person and backlighting (person should not be silhouetted)",
+                        "💡 SOLUTION 3: Record against a contrasting background - person should stand out clearly (avoid person wearing same color as background)",
+                        "💡 SOLUTION 4: Ensure person is actively walking, not standing still or partially out of frame",
+                        "💡 SOLUTION 5: Avoid occlusions - remove objects that block view of person (furniture, other people, etc.)",
+                        "💡 SOLUTION 6: Record from side view - provides best visibility for gait analysis"
                     ])
                 elif pose_detection_results["detection_rate"] < 0.6:
                     validation_result["issues"].append(
-                        f"Pose detection rate moderate ({pose_detection_results['detection_rate']*100:.1f}%) - "
-                        f"may affect analysis accuracy"
+                        f"⚠️ WARNING: Pose detection rate is moderate ({detection_rate_pct:.1f}%) - "
+                        f"AI failed to detect person in {100-detection_rate_pct:.1f}% of frames. "
+                        f"This may reduce gait analysis accuracy by up to {100-detection_rate_pct:.0f}%."
                     )
                     validation_result["recommendations"].extend([
-                        "Improve lighting conditions",
-                        "Ensure person is fully visible in frame",
-                        "Record from side view for better gait parameter visibility"
+                        f"🔍 SPECIFIC ISSUE: Person detection inconsistent - missed in {100-detection_rate_pct:.1f}% of frames",
+                        "💡 IMPROVEMENT 1: Improve lighting - use bright, even lighting without harsh shadows",
+                        "💡 IMPROVEMENT 2: Ensure person is fully visible in frame at all times during walking",
+                        "💡 IMPROVEMENT 3: Record from side view - provides best visibility of leg movement for gait analysis",
+                        "💡 IMPROVEMENT 4: Use contrasting background - person should clearly stand out from background",
+                        "💡 IMPROVEMENT 5: Ensure steady camera - avoid camera shake or movement during recording"
                     ])
+                else:
+                    # Good detection rate but still provide feedback
+                    validation_result["recommendations"].append(
+                        f"✅ Good pose detection rate ({detection_rate_pct:.1f}%) - person detected reliably"
+                    )
                 
                 if not pose_detection_results["critical_joints_detected"]:
                     validation_result["issues"].append(
-                        "Critical joints (ankles, knees) not reliably detected - cannot calculate gait parameters"
+                        "❌ CRITICAL: Required leg joints (ankles, knees) not reliably detected - "
+                        "cannot calculate accurate gait parameters like step length, cadence, or walking speed. "
+                        "Analysis will fail or produce inaccurate results."
                     )
                     validation_result["recommendations"].extend([
-                        "Record from side view - this provides best visibility of leg joints",
-                        "Ensure legs are fully visible (not blocked by clothing or objects)",
-                        "Wear form-fitting clothing that doesn't obscure leg joints",
-                        "Ensure person is walking, not standing still"
+                        "🔍 SPECIFIC ISSUE: Ankle and knee joints not visible or detected",
+                        "💡 SOLUTION 1: Record from SIDE VIEW - this is essential for seeing leg joints clearly",
+                        "💡 SOLUTION 2: Ensure legs are fully visible - avoid loose clothing that obscures joints (wear shorts or form-fitting pants)",
+                        "💡 SOLUTION 3: Ensure person is walking, not standing - joints must be visible during movement",
+                        "💡 SOLUTION 4: Improve camera angle - camera should be at hip level, perpendicular to walking direction",
+                        "💡 SOLUTION 5: Ensure good lighting on legs - avoid shadows on legs that hide joint positions",
+                        "💡 SOLUTION 6: Record full body - person should be fully in frame from head to feet"
                     ])
-                
-                # View-specific recommendations
-                if view_type == "front":
-                    if pose_detection_results["sample_analysis"].get("ankle_visibility_avg", 0) < 0.5:
+                else:
+                    # Critical joints detected - provide positive feedback
+                    ankle_vis = pose_detection_results["sample_analysis"].get("ankle_visibility_avg", 0)
+                    if ankle_vis < 0.7:
                         validation_result["recommendations"].append(
-                            "For front view, ensure ankles are clearly visible. Side view is recommended for better gait analysis."
+                            f"⚠️ Ankle visibility is moderate ({ankle_vis*100:.0f}%) - side view recording recommended for better accuracy"
+                        )
+                
+                # View-specific recommendations with detailed feedback
+                ankle_vis = pose_detection_results["sample_analysis"].get("ankle_visibility_avg", 0)
+                if view_type == "front":
+                    if ankle_vis < 0.5:
+                        validation_result["issues"].append(
+                            f"⚠️ Front view recording: Ankle visibility is low ({ankle_vis*100:.0f}%) - "
+                            f"front view makes it difficult to see leg joints clearly"
+                        )
+                        validation_result["recommendations"].extend([
+                            "🔍 SPECIFIC ISSUE: Front view limits visibility of leg joints needed for gait analysis",
+                            "💡 SOLUTION: Record from SIDE VIEW instead - provides clear visibility of ankle and knee movement",
+                            "💡 WHY: Side view shows leg swing, step length, and joint angles that front view cannot capture",
+                            "💡 ALTERNATIVE: If front view is required, ensure person walks directly toward/away from camera with full leg visibility"
+                        ])
+                    else:
+                        validation_result["recommendations"].append(
+                            "💡 TIP: Side view recording is recommended for more accurate gait analysis than front view"
                         )
                 elif view_type == "side":
-                    if pose_detection_results["sample_analysis"].get("ankle_visibility_avg", 0) < 0.7:
+                    if ankle_vis < 0.7:
+                        validation_result["issues"].append(
+                            f"⚠️ Side view recording: Ankle visibility is moderate ({ankle_vis*100:.0f}%) - "
+                            f"should be higher for optimal gait analysis"
+                        )
+                        validation_result["recommendations"].extend([
+                            f"🔍 SPECIFIC ISSUE: Ankle visibility {ankle_vis*100:.0f}% in side view - aim for >70%",
+                            "💡 IMPROVEMENT 1: Ensure full side profile is visible - person should be perpendicular to camera",
+                            "💡 IMPROVEMENT 2: Position camera at hip level, not too high or too low",
+                            "💡 IMPROVEMENT 3: Ensure ankles are not blocked by clothing or shadows",
+                            "💡 IMPROVEMENT 4: Record person walking across frame (left to right or right to left)"
+                        ])
+                    else:
                         validation_result["recommendations"].append(
-                            "For side view, ensure full side profile is visible with clear ankle and knee visibility"
+                            f"✅ Good ankle visibility ({ankle_vis*100:.0f}%) in side view - optimal for gait analysis"
                         )
             else:
                 validation_result["issues"].append("Pose detection library not available - cannot validate video quality")
