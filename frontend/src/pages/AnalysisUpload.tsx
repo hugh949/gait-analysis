@@ -333,17 +333,15 @@ export default function AnalysisUpload() {
       progressRef.current = 100 // Update ref
       setProgress(100)
       
-      // Immediately transition to processing state with initial step
-      setStatus('processing')
-      setCurrentStep('pose_estimation')
-      setStepProgress(0)
-      setStepMessage('Upload complete. Initializing analysis...')
-      
       // Store analysis ID in localStorage for resume capability
       localStorage.setItem('lastAnalysisId', id)
 
-      // Verify analysis exists before starting to poll
-      // This helps catch issues early
+      // Start polling immediately to get upload progress messages
+      // The backend creates the analysis record early, so we can poll for progress
+      pollAnalysisStatus(id)
+      
+      // Verify analysis exists and update state from response
+      // This helps catch issues early and shows current progress
       try {
         const verifyUrl = `${API_URL}/api/v1/analysis/${id}`
         console.log('Verifying analysis exists before polling:', verifyUrl)
@@ -357,16 +355,36 @@ export default function AnalysisUpload() {
         if (verifyResponse.ok) {
           const verifyData = await verifyResponse.json()
           console.log('✅ Analysis verified, status:', verifyData.status)
-          // Start polling - analysis exists
-          pollAnalysisStatus(id)
+          
+          // Update state from current analysis data
+          if (verifyData.status === 'uploading') {
+            setStatus('uploading')
+            setStepMessage(verifyData.step_message || 'Processing upload...')
+            setStepProgress(verifyData.step_progress || 0)
+          } else if (verifyData.status === 'processing') {
+            setStatus('processing')
+            setCurrentStep(verifyData.current_step as ProcessingStep || 'pose_estimation')
+            setStepProgress(verifyData.step_progress || 0)
+            setStepMessage(verifyData.step_message || 'Processing...')
+          }
         } else if (verifyResponse.status === 404) {
           // Analysis not found yet - wait a bit and retry once
           console.log('⚠️ Analysis not found immediately, waiting 2s and retrying...')
           await new Promise(resolve => setTimeout(resolve, 2000))
           const retryResponse = await fetch(verifyUrl)
           if (retryResponse.ok) {
-            console.log('✅ Analysis found on retry, starting polling')
-            pollAnalysisStatus(id)
+            console.log('✅ Analysis found on retry')
+            const retryData = await retryResponse.json()
+            if (retryData.status === 'uploading') {
+              setStatus('uploading')
+              setStepMessage(retryData.step_message || 'Processing upload...')
+              setStepProgress(retryData.step_progress || 0)
+            } else if (retryData.status === 'processing') {
+              setStatus('processing')
+              setCurrentStep(retryData.current_step as ProcessingStep || 'pose_estimation')
+              setStepProgress(retryData.step_progress || 0)
+              setStepMessage(retryData.step_message || 'Processing...')
+            }
           } else {
             throw new Error(`Analysis not found after upload (${retryResponse.status}). The analysis may not have been created properly.`)
           }
@@ -375,9 +393,8 @@ export default function AnalysisUpload() {
         }
       } catch (verifyErr: any) {
         console.error('Verification error:', verifyErr)
-        // Still try to poll - might be a transient issue
-        console.log('⚠️ Verification failed, but starting polling anyway (may be transient)')
-        pollAnalysisStatus(id)
+        // Still continue - polling will pick up the state
+        console.log('⚠️ Verification failed, but polling will continue (may be transient)')
       }
     } catch (err: any) {
       console.error('Upload error:', err)
@@ -558,6 +575,13 @@ export default function AnalysisUpload() {
           clearPollTimeout()
           console.log('✅ Analysis completed naturally - backend set status to completed')
           // DON'T clear state - keep showing completion screen with View Report button
+        } else if (analysisStatus === 'uploading') {
+          // Handle upload progress - show messages from backend
+          setStatus('uploading')
+          setStepProgress(data.step_progress || 0)
+          setStepMessage(data.step_message || 'Processing upload...')
+          // Keep polling to get updates
+          schedulePoll(500) // Poll every 500ms during upload
         } else if (analysisStatus === 'processing') {
           // CRITICAL: Handle case where stepProgress=100 but status is still 'processing'
           // This happens when backend says "complete" but database update hasn't finished
