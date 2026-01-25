@@ -637,6 +637,13 @@ export default function AnalysisUpload() {
           } else {
             schedulePoll(2000)
           }
+        } else if (analysisStatus === 'cancelled') {
+          // Handle cancelled status explicitly
+          setStatus('failed')
+          setError('Analysis was cancelled by the server (likely due to a restart or timeout). Please try uploading again.')
+          setAnalysisId(null)
+          clearPollTimeout()
+          return
         } else if (analysisStatus === 'failed') {
           setStatus('failed')
           
@@ -902,105 +909,112 @@ export default function AnalysisUpload() {
 
   return (
     <div className="upload-page">
-      <h2>Upload Video</h2>
-      <p className="description">
-        Upload a video file for gait analysis. Supported formats: MP4, AVI, MOV, MKV
-      </p>
+      <h2>{status === 'completed' ? 'Analysis Complete' : 'Upload Video'}</h2>
+      {status !== 'completed' && (
+        <p className="description">
+          Upload a video file for gait analysis. Supported formats: MP4, AVI, MOV, MKV
+        </p>
+      )}
 
       <div className="upload-section">
-        <input
-          type="file"
-          accept="video/*"
-          onChange={handleFileChange}
-          disabled={status === 'uploading' || status === 'processing'}
-          className="file-input"
-        />
+        {/* Only show file input and options when NOT completed */}
+        {status !== 'completed' && (
+          <>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={handleFileChange}
+              disabled={status === 'uploading' || status === 'processing'}
+              className="file-input"
+            />
 
-        {file && (
-          <div className="file-info">
-            <p><strong>Selected file:</strong> {file.name}</p>
-            <p><strong>Size:</strong> {(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-            <p><strong>Type:</strong> {file.type}</p>
-          </div>
-        )}
+            {file && (
+              <div className="file-info">
+                <p><strong>Selected file:</strong> {file.name}</p>
+                <p><strong>Size:</strong> {(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                <p><strong>Type:</strong> {file.type}</p>
+              </div>
+            )}
 
-        {/* Processing Frame Rate Selection */}
-        {file && status === 'idle' && (
-          <div className="processing-options" style={{
-            marginTop: '1.5rem',
-            padding: '1.5rem',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '8px',
-            border: '1px solid #e9ecef'
-          }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#2c3e50' }}>
-              ⚡ Processing Speed Options
-            </h3>
-            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
-              <strong>Note:</strong> Video frame rate will be auto-detected. Choose processing rate below (lower = faster, higher = more accurate).
-            </p>
-            <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#666' }}>
-              Choose how many frames per second to process. Lower rates = faster analysis, higher rates = more accurate results.
-            </p>
-            <div className="frame-rate-options" style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: '0.75rem'
-            }}>
-              {[
-                { value: 10, label: '10 fps', desc: 'Fastest', time: '~2-3 min' },
-                { value: 15, label: '15 fps', desc: 'Balanced', time: '~3-5 min' },
-                { value: 20, label: '20 fps', desc: 'Accurate', time: '~4-7 min' },
-                { value: 30, label: '30 fps', desc: 'Most Accurate', time: '~6-10 min' }
-              ].map((option) => {
-                // Highlight if it matches video FPS (or closest to it)
-                const isVideoFPS = videoFPS && Math.abs(videoFPS - option.value) < 5
-                const isDefault = processingFrameRate === option.value
-                
-                return (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: '1rem',
-                      border: isDefault ? '2px solid #3498db' : isVideoFPS ? '2px solid #2ecc71' : '1px solid #ddd',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      backgroundColor: isDefault ? '#e8f4f8' : isVideoFPS ? '#f0f9f4' : 'white',
-                      transition: 'all 0.2s',
-                      position: 'relative'
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="processingFrameRate"
-                      value={option.value}
-                      checked={processingFrameRate === option.value}
-                      onChange={(e) => setProcessingFrameRate(Number(e.target.value))}
-                      style={{ marginBottom: '0.5rem' }}
-                    />
-                    <strong style={{ fontSize: '1rem', color: '#2c3e50' }}>{option.label}</strong>
-                    {isVideoFPS && !isDefault && (
-                      <span style={{ fontSize: '0.7rem', color: '#2ecc71', fontWeight: '600', marginTop: '0.25rem' }}>
-                        (Video FPS)
-                      </span>
-                    )}
-                    {isDefault && (
-                      <span style={{ fontSize: '0.7rem', color: '#3498db', fontWeight: '600', marginTop: '0.25rem' }}>
-                        (Selected)
-                      </span>
-                    )}
-                    <span style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>{option.desc}</span>
-                    <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>{option.time}</span>
-                  </label>
-                )
-              })}
-            </div>
-            <p style={{ margin: '1rem 0 0 0', fontSize: '0.85rem', color: '#666', fontStyle: 'italic' }}>
-              💡 Tip: Processing at 20-30 fps gives best accuracy. Lower rates (10-15 fps) are faster but may reduce precision. The system will use the video's actual frame rate for calculations.
-            </p>
-          </div>
+            {/* Processing Frame Rate Selection */}
+            {file && status === 'idle' && (
+              <div className="processing-options" style={{
+                marginTop: '1.5rem',
+                padding: '1.5rem',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '8px',
+                border: '1px solid #e9ecef'
+              }}>
+                <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#2c3e50' }}>
+                  ⚡ Processing Speed Options
+                </h3>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#666' }}>
+                  <strong>Note:</strong> Video frame rate will be auto-detected. Choose processing rate below (lower = faster, higher = more accurate).
+                </p>
+                <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#666' }}>
+                  Choose how many frames per second to process. Lower rates = faster analysis, higher rates = more accurate results.
+                </p>
+                <div className="frame-rate-options" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                  gap: '0.75rem'
+                }}>
+                  {[
+                    { value: 10, label: '10 fps', desc: 'Fastest', time: '~2-3 min' },
+                    { value: 15, label: '15 fps', desc: 'Balanced', time: '~3-5 min' },
+                    { value: 20, label: '20 fps', desc: 'Accurate', time: '~4-7 min' },
+                    { value: 30, label: '30 fps', desc: 'Most Accurate', time: '~6-10 min' }
+                  ].map((option) => {
+                    // Highlight if it matches video FPS (or closest to it)
+                    const isVideoFPS = videoFPS && Math.abs(videoFPS - option.value) < 5
+                    const isDefault = processingFrameRate === option.value
+                    
+                    return (
+                      <label
+                        key={option.value}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          padding: '1rem',
+                          border: isDefault ? '2px solid #3498db' : isVideoFPS ? '2px solid #2ecc71' : '1px solid #ddd',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          backgroundColor: isDefault ? '#e8f4f8' : isVideoFPS ? '#f0f9f4' : 'white',
+                          transition: 'all 0.2s',
+                          position: 'relative'
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="processingFrameRate"
+                          value={option.value}
+                          checked={processingFrameRate === option.value}
+                          onChange={(e) => setProcessingFrameRate(Number(e.target.value))}
+                          style={{ marginBottom: '0.5rem' }}
+                        />
+                        <strong style={{ fontSize: '1rem', color: '#2c3e50' }}>{option.label}</strong>
+                        {isVideoFPS && !isDefault && (
+                          <span style={{ fontSize: '0.7rem', color: '#2ecc71', fontWeight: '600', marginTop: '0.25rem' }}>
+                            (Video FPS)
+                          </span>
+                        )}
+                        {isDefault && (
+                          <span style={{ fontSize: '0.7rem', color: '#3498db', fontWeight: '600', marginTop: '0.25rem' }}>
+                            (Selected)
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>{option.desc}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>{option.time}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <p style={{ margin: '1rem 0 0 0', fontSize: '0.85rem', color: '#666', fontStyle: 'italic' }}>
+                  💡 Tip: Processing at 20-30 fps gives best accuracy. Lower rates (10-15 fps) are faster but may reduce precision. The system will use the video's actual frame rate for calculations.
+                </p>
+              </div>
+            )}
+          </>
         )}
 
         {/* Show error message prominently when upload fails */}
@@ -1484,38 +1498,42 @@ export default function AnalysisUpload() {
         
         {/* Show option to upload new video after completion */}
         {status === 'completed' && (
-          <button
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              // Reset to allow new upload
-              setStatus('idle')
-              setProgress(0)
-              setCurrentStep(null)
-              setStepProgress(0)
-              setStepMessage('')
-              setAnalysisId(null)
-              setFile(null)
-              setError(null)
-              setVideoQuality(null)
-              setProcessingFrameRate(null)
-              setVideoFPS(null)
-              progressRef.current = 0
-              localStorage.removeItem('lastAnalysisId')
-              const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-              if (fileInput) {
-                fileInput.value = ''
-              }
-            }}
-            className="btn btn-secondary"
-            style={{ 
-              marginTop: '1rem',
-              fontSize: '0.9rem',
-              padding: '0.75rem 1.5rem'
-            }}
-          >
-            Upload New Video
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                // Reset to allow new upload
+                setStatus('idle')
+                setProgress(0)
+                setCurrentStep(null)
+                setStepProgress(0)
+                setStepMessage('')
+                setAnalysisId(null)
+                setFile(null)
+                setError(null)
+                setVideoQuality(null)
+                setProcessingFrameRate(null)
+                setVideoFPS(null)
+                progressRef.current = 0
+                localStorage.removeItem('lastAnalysisId')
+                const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+                if (fileInput) {
+                  fileInput.value = ''
+                }
+              }}
+              className="btn btn-secondary"
+              style={{ 
+                fontSize: '0.9rem',
+                padding: '0.75rem 1.5rem',
+                color: '#666',
+                background: 'transparent',
+                border: '1px solid #ddd'
+              }}
+            >
+              Start New Analysis (Upload New Video)
+            </button>
+          </div>
         )}
       </div>
     </div>
