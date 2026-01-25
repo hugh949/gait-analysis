@@ -419,6 +419,7 @@ async def upload_video(
             
             # CRITICAL: Create analysis record EARLY so we can update progress during upload
             # This allows users to see what's happening during video quality validation and blob upload
+            analysis_record_created = False
             try:
                 initial_analysis_data = {
                     'id': analysis_id,
@@ -430,23 +431,36 @@ async def upload_video(
                     'step_progress': 0,
                     'step_message': '📤 File received. Starting upload processing...'
                 }
-                await db_service.create_analysis(initial_analysis_data)
-                logger.info(f"[{request_id}] ✅ Created initial analysis record for progress tracking")
+                creation_result = await db_service.create_analysis(initial_analysis_data)
+                if creation_result:
+                    analysis_record_created = True
+                    logger.info(f"[{request_id}] ✅ Created initial analysis record for progress tracking")
+                else:
+                    logger.warning(f"[{request_id}] ⚠️ create_analysis returned False - record may not exist")
             except Exception as early_create_error:
-                logger.warning(f"[{request_id}] ⚠️ Failed to create early analysis record: {early_create_error} - will create later")
+                logger.warning(f"[{request_id}] ⚠️ Failed to create early analysis record: {early_create_error} - will create later", exc_info=True)
+                analysis_record_created = False
             
             # Helper function to update upload progress
+            # Only updates if analysis record exists - silently fails if not (non-critical)
             async def update_upload_progress(progress: int, message: str):
-                """Update analysis record with upload progress"""
+                """Update analysis record with upload progress - non-blocking"""
+                if not analysis_record_created:
+                    # Analysis record doesn't exist yet - skip update (non-critical)
+                    return
                 try:
-                    await db_service.update_analysis(analysis_id, {
+                    update_result = await db_service.update_analysis(analysis_id, {
                         'status': 'uploading',
                         'current_step': 'upload',
                         'step_progress': progress,
                         'step_message': message
                     })
+                    if not update_result:
+                        # Update failed - analysis might not exist, but that's OK
+                        logger.debug(f"[{request_id}] Upload progress update returned False (non-critical)")
                 except Exception as update_err:
-                    logger.warning(f"[{request_id}] Failed to update upload progress: {update_err}")
+                    # Silently fail - progress updates are non-critical
+                    logger.debug(f"[{request_id}] Failed to update upload progress: {update_err} (non-critical)")
             
             # CRITICAL: Validate video quality BEFORE uploading to blob storage
             # This allows us to provide immediate feedback to user
@@ -511,23 +525,23 @@ async def upload_video(
                             
                             if quality_result:
                                 logger.info(f"[{request_id}] 🔍 Video quality validation results:")
-                            logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
-                            logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
-                            logger.info(f"[{request_id}] 🔍   - Pose detection rate: {quality_result.get('pose_detection_rate', 0)*100:.1f}%")
-                            logger.info(f"[{request_id}] 🔍   - Critical joints detected: {quality_result.get('critical_joints_detected', False)}")
-                            logger.info(f"[{request_id}] 🔍   - Issues found: {len(quality_result.get('issues', []))}")
-                            
-                            if quality_result.get('issues'):
-                                logger.warning(f"[{request_id}] ⚠️ Video quality issues detected:")
-                                for issue in quality_result.get('issues', []):
-                                    logger.warning(f"[{request_id}] ⚠️   - {issue}")
-                            
-                            if not quality_result.get('is_valid', False):
-                                logger.error(f"[{request_id}] ❌❌❌ VIDEO QUALITY INSUFFICIENT FOR ACCURATE GAIT ANALYSIS ❌❌❌")
-                                logger.error(f"[{request_id}] Quality score: {quality_result.get('quality_score', 0):.1f}% (minimum: 60%)")
-                                logger.error(f"[{request_id}] Top recommendations:")
-                                for rec in quality_result.get('recommendations', [])[:3]:
-                                    logger.error(f"[{request_id}]   - {rec}")
+                                logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
+                                logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
+                                logger.info(f"[{request_id}] 🔍   - Pose detection rate: {quality_result.get('pose_detection_rate', 0)*100:.1f}%")
+                                logger.info(f"[{request_id}] 🔍   - Critical joints detected: {quality_result.get('critical_joints_detected', False)}")
+                                logger.info(f"[{request_id}] 🔍   - Issues found: {len(quality_result.get('issues', []))}")
+                                
+                                if quality_result.get('issues'):
+                                    logger.warning(f"[{request_id}] ⚠️ Video quality issues detected:")
+                                    for issue in quality_result.get('issues', []):
+                                        logger.warning(f"[{request_id}] ⚠️   - {issue}")
+                                
+                                if not quality_result.get('is_valid', False):
+                                    logger.error(f"[{request_id}] ❌❌❌ VIDEO QUALITY INSUFFICIENT FOR ACCURATE GAIT ANALYSIS ❌❌❌")
+                                    logger.error(f"[{request_id}] Quality score: {quality_result.get('quality_score', 0):.1f}% (minimum: 60%)")
+                                    logger.error(f"[{request_id}] Top recommendations:")
+                                    for rec in quality_result.get('recommendations', [])[:3]:
+                                        logger.error(f"[{request_id}]   - {rec}")
                         except Exception as validation_error:
                             logger.warning(f"[{request_id}] Video quality validation failed (non-critical): {validation_error}", exc_info=True)
                             logger.warning(f"[{request_id}] Processing will continue, but video quality is unknown")
