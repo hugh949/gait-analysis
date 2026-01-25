@@ -141,6 +141,48 @@ async def test_endpoint():
         "router": "analysis_azure"
     })
 
+@router.get("/diagnostics")
+async def diagnostics():
+    """Diagnostic endpoint to check system health"""
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[{request_id}] Diagnostics check requested")
+    
+    db_status = "unknown"
+    storage_status = "unknown"
+    vision_status = "unknown"
+    
+    try:
+        if db_service:
+            if hasattr(db_service, '_use_mock') and db_service._use_mock:
+                db_status = f"mock (storage file: {getattr(db_service, '_mock_storage_file', 'unknown')})"
+            elif hasattr(db_service, '_use_table') and db_service._use_table:
+                db_status = "azure_table"
+            else:
+                db_status = "azure_sql"
+        else:
+            db_status = "unavailable"
+            
+        storage_status = "configured" if storage_service else "mock"
+        vision_status = "configured" if vision_service else "mock"
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "components": {
+                "database": db_status,
+                "storage": storage_status,
+                "vision": vision_status
+            },
+            "environment": {
+                "WEBSITE_SITE_NAME": os.getenv("WEBSITE_SITE_NAME", "unknown"),
+                "REGION_NAME": os.getenv("REGION_NAME", "unknown")
+            }
+        }
+    except Exception as e:
+        logger.error(f"[{request_id}] Diagnostics failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/upload")
 async def upload_video(
     file: UploadFile = File(...),
@@ -2673,6 +2715,18 @@ async def process_analysis_azure(
                 # SIMPLIFIED: If update returned True, trust it - just do a simple verification
                 # The complex verification was causing issues - if the database says it updated, trust it
                 if update_result:
+                    # CRITICAL: If using mock storage, force save to file immediately to ensure persistence
+                    # This prevents data loss if app recycles right after completion
+                    if hasattr(db_service, '_use_mock') and db_service._use_mock:
+                        try:
+                            logger.info(f"[{request_id}] 💾 [STEP 4] Forcing sync save to mock storage file...")
+                            if hasattr(db_service, '_save_mock_storage'):
+                                # Run in thread pool to avoid blocking async loop
+                                await asyncio.to_thread(db_service._save_mock_storage, force_sync=True)
+                                logger.info(f"[{request_id}] ✅ [STEP 4] Mock storage synced to disk")
+                        except Exception as save_err:
+                            logger.error(f"[{request_id}] ❌ [STEP 4] Failed to sync mock storage: {save_err}")
+
                     # Update progress: Verifying save
                     if progress_callback:
                         try:

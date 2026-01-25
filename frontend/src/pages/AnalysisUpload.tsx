@@ -835,10 +835,25 @@ export default function AnalysisUpload() {
               
               return // Don't clear - show completion with View Report button
             }
+          } else if (checkResponse.status === 404) {
+             console.log('⚠️ Analysis lost (404), setting failed state instead of idle')
+             setStatus('failed')
+             setError('Previous analysis session was lost. Please upload your video again.')
+             // Clear local storage so we don't check again
+             localStorage.removeItem('lastAnalysisId')
+             return
           }
         } catch (err) {
           console.warn('⚠️ Error checking previous analysis:', err)
-          // Continue with cleanup if check fails
+          // If 404, analysis is lost
+          if (lastAnalysisId && (err as any).status === 404) {
+             console.log('⚠️ Analysis lost (404), setting failed state instead of idle')
+             setStatus('failed')
+             setError('Previous analysis session was lost. Please upload your video again.')
+             // Clear local storage so we don't check again
+             localStorage.removeItem('lastAnalysisId')
+             return
+          }
         }
       }
       

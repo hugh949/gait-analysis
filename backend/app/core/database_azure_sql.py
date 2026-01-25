@@ -1309,24 +1309,28 @@ class AzureSQLService:
                 
                 analyses = []
                 for entity in entities:
-                    analysis = {
-                        'id': entity.get('RowKey'),
-                        'patient_id': entity.get('patient_id'),
-                        'filename': entity.get('filename'),
-                        'video_url': entity.get('video_url'),
-                        'status': entity.get('status'),
-                        'current_step': entity.get('current_step'),
-                        'step_progress': entity.get('step_progress', 0),
-                        'step_message': entity.get('step_message'),
-                        'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
-                        'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
-                        'created_at': entity.get('created_at'),
-                        'updated_at': entity.get('updated_at')
-                    }
-                    analyses.append(analysis)
+                    try:
+                        analysis = {
+                            'id': entity.get('RowKey'),
+                            'patient_id': entity.get('patient_id'),
+                            'filename': entity.get('filename'),
+                            'video_url': entity.get('video_url'),
+                            'status': entity.get('status'),
+                            'current_step': entity.get('current_step'),
+                            'step_progress': entity.get('step_progress', 0),
+                            'step_message': entity.get('step_message'),
+                            'metrics': json.loads(entity.get('metrics', '{}')) if isinstance(entity.get('metrics'), str) else entity.get('metrics', {}),
+                            'steps_completed': json.loads(entity.get('steps_completed', '{}')) if isinstance(entity.get('steps_completed'), str) else entity.get('steps_completed', {}),
+                            'created_at': entity.get('created_at'),
+                            'updated_at': entity.get('updated_at')
+                        }
+                        analyses.append(analysis)
+                    except Exception as item_error:
+                        logger.warning(f"Error processing list item from Table Storage: {item_error}")
+                        continue
                 
                 # Sort by updated_at descending (most recent first)
-                analyses.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+                analyses.sort(key=lambda x: x.get('updated_at', '') or '', reverse=True)
                 logger.debug(f"✅ Listed {len(analyses[:limit])} analyses from Table Storage")
                 return analyses[:limit]
             except Exception as e:
@@ -1339,22 +1343,29 @@ class AzureSQLService:
             # Get all from in-memory mock storage (use class variable to ensure persistence)
             analyses = []
             for analysis in AzureSQLService._mock_storage.values():
-                analysis_copy = analysis.copy()
-                # Ensure steps_completed exists (default to empty dict if missing)
-                if 'steps_completed' not in analysis_copy:
-                    analysis_copy['steps_completed'] = {}
-                analyses.append(analysis_copy)
+                try:
+                    analysis_copy = analysis.copy()
+                    # Ensure steps_completed exists (default to empty dict if missing)
+                    if 'steps_completed' not in analysis_copy:
+                        analysis_copy['steps_completed'] = {}
+                    analyses.append(analysis_copy)
+                except Exception as item_error:
+                    logger.warning(f"Error processing mock item: {item_error}")
+                    continue
+            
             # Sort by created_at descending
-            analyses.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            analyses.sort(key=lambda x: x.get('created_at', '') or '', reverse=True)
             return analyses[:limit]
         
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                # Include steps_completed in query for consistency
                 cursor.execute("""
                     SELECT id, patient_id, filename, video_url, status, 
                            current_step, step_progress, step_message, 
-                           metrics, created_at, updated_at
+                           metrics, created_at, updated_at,
+                           COALESCE(steps_completed, '{}') as steps_completed
                     FROM analyses
                     ORDER BY created_at DESC
                     OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
@@ -1363,20 +1374,26 @@ class AzureSQLService:
                 rows = cursor.fetchall()
                 analyses = []
                 for row in rows:
-                    metrics = json.loads(row[8]) if row[8] else {}
-                    analyses.append({
-                        'id': row[0],
-                        'patient_id': row[1],
-                        'filename': row[2],
-                        'video_url': row[3],
-                        'status': row[4],
-                        'current_step': row[5],
-                        'step_progress': row[6],
-                        'step_message': row[7],
-                        'metrics': metrics,
-                        'created_at': str(row[9]),
-                        'updated_at': str(row[10])
-                    })
+                    try:
+                        metrics = json.loads(row[8]) if row[8] else {}
+                        steps_completed = json.loads(row[11]) if len(row) > 11 and row[11] else {}
+                        analyses.append({
+                            'id': row[0],
+                            'patient_id': row[1],
+                            'filename': row[2],
+                            'video_url': row[3],
+                            'status': row[4],
+                            'current_step': row[5],
+                            'step_progress': row[6],
+                            'step_message': row[7],
+                            'metrics': metrics,
+                            'steps_completed': steps_completed,
+                            'created_at': str(row[9]),
+                            'updated_at': str(row[10])
+                        })
+                    except Exception as item_error:
+                        logger.warning(f"Error processing SQL row: {item_error}")
+                        continue
                 return analyses
         except Exception as e:
             logger.error(f"Failed to list analyses: {e}")
