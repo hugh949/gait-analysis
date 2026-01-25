@@ -2,7 +2,7 @@
 MINIMAL WORKING UPLOAD ENDPOINT - Guaranteed to work
 This is a fallback endpoint that always works for basic file upload
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from typing import Optional
 from loguru import logger
@@ -12,10 +12,19 @@ import uuid
 import asyncio
 from datetime import datetime
 
+# Import process_analysis_azure from the main analysis module
+# This is safe because analysis_azure_minimal_upload is not imported by analysis_azure
+try:
+    from app.api.v1.analysis_azure import process_analysis_azure
+except ImportError:
+    logger.error("Could not import process_analysis_azure - background processing will fail")
+    process_analysis_azure = None
+
 router = APIRouter()
 
 @router.post("/upload")
 async def upload_video_minimal(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     patient_id: Optional[str] = Query(None),
     view_type: str = Query("front"),
@@ -231,6 +240,23 @@ async def upload_video_minimal(
         
         # Return success with analysis_id (frontend expects this)
         logger.info(f"[{request_id}] ✅✅✅ UPLOAD SUCCESS - Analysis {analysis_id} created and verified ✅✅✅")
+        
+        # CRITICAL: Start background processing task
+        if process_analysis_azure:
+            logger.info(f"[{request_id}] 🚀 Launching background processing task...")
+            background_tasks.add_task(
+                process_analysis_azure,
+                analysis_id=analysis_id,
+                video_url=tmp_path,  # Use the temp file path
+                patient_id=patient_id,
+                view_type=view_type,
+                reference_length_mm=reference_length_mm,
+                fps=fps,
+                processing_fps=processing_fps
+            )
+        else:
+            logger.error(f"[{request_id}] ❌ Cannot start background processing: process_analysis_azure function not available")
+        
         return JSONResponse({
             "analysis_id": analysis_id,
             "status": "processing",
