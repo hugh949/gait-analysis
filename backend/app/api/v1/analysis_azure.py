@@ -489,47 +489,64 @@ async def upload_video(
                         # Import succeeded - try to use it with timeout
                         try:
                             # Get gait analysis service (defined in this module)
-                            gait_service = get_gait_analysis_service()
-                            validator = VideoQualityValidator(
-                                pose_landmarker=gait_service.pose_landmarker if gait_service else None
-                            )
-                            
-                            # OPTIMIZED: Add timeout to prevent blocking (max 10 seconds)
-                            # If validation takes too long, skip it to prevent 502 timeout
-                            validation_timeout = 10.0  # 10 seconds max
-                            validation_start = time.time()
-                            
-                            await update_upload_progress(15, '🔍 Analyzing video frames for quality assessment...')
+                            # Wrap in try-except to handle any initialization errors
                             try:
-                                quality_result = await asyncio.wait_for(
-                                    asyncio.to_thread(
-                                        validator.validate_video_for_gait_analysis,
-                                        video_path=tmp_path,
-                                        view_type=str(view_type),
-                                        sample_frames=20
-                                    ),
-                                    timeout=validation_timeout
-                                )
-                                validation_duration = time.time() - validation_start
-                                logger.info(f"[{request_id}] ✅ Video quality validation completed in {validation_duration:.1f}s")
-                                
-                                # Update progress with validation results
-                                quality_score = quality_result.get('quality_score', 0) if quality_result else 0
-                                if quality_result:
-                                    await update_upload_progress(25, f'✅ Video quality validated: {quality_score:.0f}% - {"Good" if quality_score >= 60 else "May affect accuracy"}')
-                                else:
-                                    await update_upload_progress(25, '✅ Video quality validation skipped (timeout)')
-                            except asyncio.TimeoutError:
-                                validation_duration = time.time() - validation_start
-                                logger.warning(f"[{request_id}] ⚠️ Video quality validation timed out after {validation_duration:.1f}s - skipping to prevent upload timeout")
-                                await update_upload_progress(25, '⚠️ Video quality validation timed out - continuing with upload...')
+                                gait_service = get_gait_analysis_service()
+                            except Exception as gait_service_error:
+                                logger.warning(f"[{request_id}] ⚠️ Failed to get gait analysis service for validation: {gait_service_error} - skipping validation")
                                 quality_result = None
-                            except Exception as validation_thread_error:
-                                logger.warning(f"[{request_id}] ⚠️ Video quality validation error: {validation_thread_error} - skipping")
-                                await update_upload_progress(25, '⚠️ Video quality validation error - continuing with upload...')
-                                quality_result = None
+                                gait_service = None
                             
-                            if quality_result:
+                            if gait_service is None:
+                                logger.warning(f"[{request_id}] ⚠️ Gait analysis service is None - skipping video quality validation")
+                                quality_result = None
+                            else:
+                                try:
+                                    validator = VideoQualityValidator(
+                                        pose_landmarker=gait_service.pose_landmarker if gait_service else None
+                                    )
+                                except Exception as validator_init_error:
+                                    logger.warning(f"[{request_id}] ⚠️ Failed to initialize VideoQualityValidator: {validator_init_error} - skipping validation")
+                                    quality_result = None
+                                    validator = None
+                                
+                                if validator is not None:
+                                    # OPTIMIZED: Add timeout to prevent blocking (max 10 seconds)
+                                    # If validation takes too long, skip it to prevent 502 timeout
+                                    validation_timeout = 10.0  # 10 seconds max
+                                    validation_start = time.time()
+                                    
+                                    await update_upload_progress(15, '🔍 Analyzing video frames for quality assessment...')
+                                    try:
+                                        quality_result = await asyncio.wait_for(
+                                            asyncio.to_thread(
+                                                validator.validate_video_for_gait_analysis,
+                                                video_path=tmp_path,
+                                                view_type=str(view_type),
+                                                sample_frames=20
+                                            ),
+                                            timeout=validation_timeout
+                                        )
+                                        validation_duration = time.time() - validation_start
+                                        logger.info(f"[{request_id}] ✅ Video quality validation completed in {validation_duration:.1f}s")
+                                        
+                                        # Update progress with validation results
+                                        quality_score = quality_result.get('quality_score', 0) if quality_result else 0
+                                        if quality_result:
+                                            await update_upload_progress(25, f'✅ Video quality validated: {quality_score:.0f}% - {"Good" if quality_score >= 60 else "May affect accuracy"}')
+                                        else:
+                                            await update_upload_progress(25, '✅ Video quality validation skipped (timeout)')
+                                    except asyncio.TimeoutError:
+                                        validation_duration = time.time() - validation_start
+                                        logger.warning(f"[{request_id}] ⚠️ Video quality validation timed out after {validation_duration:.1f}s - skipping to prevent upload timeout")
+                                        await update_upload_progress(25, '⚠️ Video quality validation timed out - continuing with upload...')
+                                        quality_result = None
+                                    except Exception as validation_thread_error:
+                                        logger.warning(f"[{request_id}] ⚠️ Video quality validation error: {validation_thread_error} - skipping")
+                                        await update_upload_progress(25, '⚠️ Video quality validation error - continuing with upload...')
+                                        quality_result = None
+                                    
+                                    if quality_result:
                                 logger.info(f"[{request_id}] 🔍 Video quality validation results:")
                                 logger.info(f"[{request_id}] 🔍   - Quality score: {quality_result.get('quality_score', 0):.1f}%")
                                 logger.info(f"[{request_id}] 🔍   - Is valid: {quality_result.get('is_valid', False)}")
