@@ -217,7 +217,25 @@ export default function AnalysisUpload() {
                 `3. Try with a smaller file (<50 MB) if the issue persists\n` +
                 `4. Check the browser console for more details`
             } else if (xhr.status === 500) {
-              errorMessage = `Upload failed: Internal Server Error (500)\n\n` +
+              // Try to parse error details from response first
+              let details = ''
+              try {
+                const response = JSON.parse(xhr.responseText)
+                if (response.detail) {
+                   if (typeof response.detail === 'string') {
+                     details = `\n\nError details: ${response.detail}`
+                   } else if (response.detail.message) {
+                     details = `\n\nError details: ${response.detail.message}`
+                   }
+                }
+              } catch (e) {
+                 // If not JSON, use raw text if short enough
+                 if (xhr.responseText && xhr.responseText.length > 0 && xhr.responseText.length < 500) {
+                    details = `\n\nError details: ${xhr.responseText}`
+                 }
+              }
+
+              errorMessage = `Upload failed: Internal Server Error (500)${details}\n\n` +
                 `The server encountered an error processing your upload.\n\n` +
                 `Please try:\n` +
                 `1. Wait a moment and try again\n` +
