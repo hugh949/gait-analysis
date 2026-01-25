@@ -377,6 +377,29 @@ app.add_middleware(
 # API routes - must be registered before catch-all
 # These routes are more specific and will match before the catch-all
 
+# CRITICAL: Register minimal upload endpoint FIRST as guaranteed fallback
+# This ensures basic upload always works even if main router fails
+try:
+    from app.api.v1.analysis_azure_minimal_upload import router as minimal_upload_router
+    app.include_router(minimal_upload_router, prefix="/api/v1/analysis", tags=["analysis"])
+    logger.info("✅ Minimal upload router registered FIRST as fallback")
+    
+    # Also register function directly as backup
+    try:
+        from app.api.v1.analysis_azure_minimal_upload import upload_video_minimal
+        app.add_api_route(
+            path="/api/v1/analysis/upload",
+            endpoint=upload_video_minimal,
+            methods=["POST"],
+            tags=["analysis"],
+            name="upload_video_minimal_primary"
+        )
+        logger.info("✅ Minimal upload endpoint registered directly (primary)")
+    except Exception as direct_err:
+        logger.warning(f"Failed to register minimal upload directly: {direct_err}")
+except Exception as e:
+    logger.error(f"❌ CRITICAL: Failed to register minimal upload router: {e}", exc_info=True)
+
 # CRITICAL: Always attempt to register the upload endpoint, even if router fails
 # This ensures the endpoint exists regardless of router import/registration issues
 def ensure_upload_endpoint_registered():
@@ -577,41 +600,8 @@ logger.info("=" * 80)
 if testing_router:
     app.include_router(testing_router, prefix="/api/v1", tags=["testing"])
 
-# CRITICAL: Register minimal upload endpoint as fallback - guaranteed to work
-# This ensures basic file upload always works even if main router fails
-try:
-    from app.api.v1.analysis_azure_minimal_upload import router as minimal_upload_router
-    app.include_router(minimal_upload_router, prefix="/api/v1/analysis", tags=["analysis"])
-    logger.info("✅ Minimal upload router registered as fallback")
-    
-    # Also try to register the function directly as backup
-    try:
-        from app.api.v1.analysis_azure_minimal_upload import upload_video_minimal
-        app.add_api_route(
-            path="/api/v1/analysis/upload",
-            endpoint=upload_video_minimal,
-            methods=["POST"],
-            tags=["analysis"],
-            name="upload_video_minimal_direct"
-        )
-        logger.info("✅ Minimal upload endpoint registered directly (backup)")
-    except Exception as direct_err:
-        logger.warning(f"Failed to register minimal upload directly: {direct_err}")
-except Exception as e:
-    logger.error(f"❌ CRITICAL: Failed to register minimal upload router: {e}", exc_info=True)
-    # Try to register function directly as last resort
-    try:
-        from app.api.v1.analysis_azure_minimal_upload import upload_video_minimal
-        app.add_api_route(
-            path="/api/v1/analysis/upload",
-            endpoint=upload_video_minimal,
-            methods=["POST"],
-            tags=["analysis"],
-            name="upload_video_minimal_emergency"
-        )
-        logger.info("✅ Minimal upload endpoint registered via emergency fallback")
-    except Exception as emergency_err:
-        logger.error(f"❌ Emergency fallback also failed: {emergency_err}", exc_info=True)
+# Minimal upload is already registered above - this is just for logging
+logger.info("Minimal upload endpoint should already be registered above")
 
 # Include simple upload router for testing
 try:
