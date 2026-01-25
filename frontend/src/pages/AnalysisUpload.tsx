@@ -808,29 +808,29 @@ export default function AnalysisUpload() {
       if (shouldClear) {
         // Clear all state - start fresh
         setStatus('idle')
-      setProgress(0)
-      setCurrentStep(null)
-      setStepProgress(0)
-      setStepMessage('')
-      setAnalysisId(null)
-      setFile(null)
-      setError(null)
-      setVideoQuality(null)
-      setProcessingFrameRate(null)
-      setVideoFPS(null)
-      progressRef.current = 0
-      
-      // Clear localStorage
-      localStorage.removeItem('lastAnalysisId')
-      
-      // Clear file input if it exists
-      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
-      if (fileInput) {
-        fileInput.value = ''
+        setProgress(0)
+        setCurrentStep(null)
+        setStepProgress(0)
+        setStepMessage('')
+        setAnalysisId(null)
+        setFile(null)
+        setError(null)
+        setVideoQuality(null)
+        setProcessingFrameRate(null)
+        setVideoFPS(null)
+        progressRef.current = 0
+        
+        // Clear localStorage
+        localStorage.removeItem('lastAnalysisId')
+        
+        // Clear file input if it exists
+        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+        if (fileInput) {
+          fileInput.value = ''
+        }
+        
+        console.log('✅ Cleanup complete - ready for new file upload')
       }
-      
-      console.log('✅ Cleanup complete - ready for new file upload')
-    }
 
     cleanupPreviousProcessing()
   }, [])
