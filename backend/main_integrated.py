@@ -594,10 +594,24 @@ if logs_router:
 @app.get("/api/v1/health")
 async def api_health_check():
     """API health check endpoint (for frontend compatibility)"""
+    # Check if upload endpoint is registered
+    upload_endpoint_found = False
+    upload_endpoint_path = None
+    for route in app.routes:
+        if hasattr(route, 'path') and route.path == "/api/v1/analysis/upload":
+            methods = list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+            if 'POST' in methods:
+                upload_endpoint_found = True
+                upload_endpoint_path = route.path
+                break
+    
     return {
         "status": "healthy",
         "service": "Gait Analysis API",
-        "version": "3.0.0"
+        "version": "3.0.0",
+        "upload_endpoint_registered": upload_endpoint_found,
+        "upload_endpoint_path": upload_endpoint_path if upload_endpoint_found else None,
+        "analysis_router_imported": analysis_router is not None
     }
 
 
