@@ -145,13 +145,56 @@ async def upload_video_minimal(
                             continue
                 
                 if not analysis_created:
-                    logger.error(f"[{request_id}] ❌ CRITICAL: Failed to create/verify analysis record after 3 attempts")
+                    logger.error(f"[{request_id}] ❌ CRITICAL: Failed to create/verify analysis record after 5 attempts")
                     logger.error(f"[{request_id}] Analysis ID: {analysis_id} - Frontend will get 404 errors")
+                    # CRITICAL: Don't return success if record wasn't created/verified
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create analysis record. The record could not be verified after creation. Please try again."
+                    )
             else:
                 logger.error(f"[{request_id}] ❌ Database service not available - analysis record cannot be created")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database service is not available. Please try again in a moment."
+                )
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
         except Exception as db_err:
             logger.error(f"[{request_id}] ❌ Failed to create analysis record: {db_err}", exc_info=True)
             # This is critical - log as error, not warning
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create analysis record: {str(db_err)}"
+            )
+        
+        # CRITICAL: Final verification - ensure record is readable one more time before returning
+        # This simulates what the frontend will do when it calls get_analysis
+        if db_service and analysis_created:
+            try:
+                final_check = await db_service.get_analysis(analysis_id)
+                if not final_check or final_check.get('id') != analysis_id:
+                    logger.error(f"[{request_id}] ❌ CRITICAL: Final verification failed - record not readable")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Analysis record was created but cannot be read. Please try again."
+                    )
+                logger.info(f"[{request_id}] ✅ Final verification passed - record is readable")
+            except HTTPException:
+                raise
+            except Exception as final_err:
+                logger.error(f"[{request_id}] ❌ Final verification error: {final_err}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to verify analysis record: {str(final_err)}"
+                )
+        
+        # Only return success if record was created and verified
+        if not analysis_created:
+            raise HTTPException(
+                status_code=500,
+                detail="Analysis record could not be created or verified. Please try again."
+            )
         
         # Return success with analysis_id (frontend expects this)
         return JSONResponse({
