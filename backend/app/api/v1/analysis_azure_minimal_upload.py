@@ -172,6 +172,12 @@ async def upload_video_minimal(
         # This simulates what the frontend will do when it calls get_analysis
         if db_service and analysis_created:
             try:
+                # For mock storage, ensure one final save before verification
+                if hasattr(db_service, '_use_mock') and db_service._use_mock:
+                    if hasattr(db_service, '_save_mock_storage'):
+                        db_service._save_mock_storage(force_sync=True)
+                        await asyncio.sleep(0.1)  # Small delay for file sync
+                
                 final_check = await db_service.get_analysis(analysis_id)
                 if not final_check or final_check.get('id') != analysis_id:
                     logger.error(f"[{request_id}] ❌ CRITICAL: Final verification failed - record not readable")
@@ -180,6 +186,11 @@ async def upload_video_minimal(
                         detail="Analysis record was created but cannot be read. Please try again."
                     )
                 logger.info(f"[{request_id}] ✅ Final verification passed - record is readable")
+                
+                # CRITICAL: Small delay before returning to ensure record is fully persisted
+                # This helps with eventual consistency in multi-worker scenarios
+                await asyncio.sleep(0.2)
+                
             except HTTPException:
                 raise
             except Exception as final_err:
@@ -197,6 +208,7 @@ async def upload_video_minimal(
             )
         
         # Return success with analysis_id (frontend expects this)
+        logger.info(f"[{request_id}] ✅✅✅ UPLOAD SUCCESS - Analysis {analysis_id} created and verified ✅✅✅")
         return JSONResponse({
             "analysis_id": analysis_id,
             "status": "processing",
