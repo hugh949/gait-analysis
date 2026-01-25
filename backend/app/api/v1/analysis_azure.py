@@ -131,6 +131,15 @@ def get_gait_analysis_service() -> Optional[GaitAnalysisService]:
 if db_service is None:
     logger.critical("Database service not initialized - API will not function correctly")
 
+# CRITICAL: Add a simple test endpoint to verify router is working
+@router.get("/test")
+async def test_endpoint():
+    """Simple test endpoint to verify router is registered"""
+    return JSONResponse({
+        "status": "success",
+        "message": "Analysis router is working",
+        "router": "analysis_azure"
+    })
 
 @router.post("/upload")
 async def upload_video(

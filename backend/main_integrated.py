@@ -531,6 +531,25 @@ try:
         logger.info("✅ Upload endpoint verification passed")
     else:
         logger.error("❌ CRITICAL: Upload endpoint could not be registered - uploads will fail!")
+        # Try one more time with a different approach
+        logger.error("❌ Attempting emergency registration...")
+        try:
+            # Emergency fallback: try to import and register directly
+            import importlib
+            analysis_module = importlib.import_module("app.api.v1.analysis_azure")
+            if hasattr(analysis_module, 'upload_video'):
+                app.add_api_route(
+                    path="/api/v1/analysis/upload",
+                    endpoint=analysis_module.upload_video,
+                    methods=["POST"],
+                    tags=["analysis"],
+                    name="upload_video_emergency"
+                )
+                logger.info("✅ Emergency upload endpoint registration succeeded")
+            else:
+                logger.error("❌ upload_video function not found in module")
+        except Exception as emergency_err:
+            logger.error(f"❌ Emergency registration also failed: {emergency_err}", exc_info=True)
 except Exception as verify_error:
     logger.error(f"❌ Error during upload endpoint verification: {verify_error}", exc_info=True)
     logger.error("⚠️ Continuing startup but upload endpoint may not be available")
@@ -606,6 +625,16 @@ async def debug_routes():
             if "/api/" in route.path:
                 api_routes.append(route_info)
     
+    # Check router state
+    router_routes = []
+    if analysis_router:
+        for route in analysis_router.routes:
+            if hasattr(route, 'path'):
+                router_routes.append({
+                    "path": route.path,
+                    "methods": list(route.methods) if hasattr(route, 'methods') and hasattr(route.methods, '__iter__') else []
+                })
+    
     return {
         "total_routes": len(routes_info),
         "total_api_routes": len(api_routes),
@@ -615,7 +644,9 @@ async def debug_routes():
         "upload_endpoint_exists": len(upload_endpoints) > 0,
         "exact_upload_path": any(r.get("path") == "/api/v1/analysis/upload" for r in routes_info),
         "router_import_status": "success" if analysis_router else "failed",
-        "router_type": str(type(analysis_router)) if analysis_router else "None"
+        "router_type": str(type(analysis_router)) if analysis_router else "None",
+        "router_routes": router_routes,
+        "router_route_count": len(router_routes) if analysis_router else 0
     }
 
 
