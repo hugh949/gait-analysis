@@ -957,7 +957,6 @@ class GaitAnalysisService:
             logger.info(f"🔍   - Reference length: {reference_length_mm}mm")
             logger.info("=" * 80)
             
-            import time
             start_time = time.time()
             
             # CRITICAL: Log detailed input validation before calculation
