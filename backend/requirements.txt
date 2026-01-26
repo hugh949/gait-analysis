@@ -25,9 +25,10 @@ loguru>=0.7.0
 # Minimal numpy (if needed by Azure SDKs)
 numpy>=1.24.0
 
-# Gait Analysis - Professional-Grade Dependencies - MAXIMUM ACCURACY
+# Gait Analysis - Professional-Grade Dependencies - OPTIMIZED FOR SPEED & ACCURACY
 opencv-python>=4.8.0
-mediapipe>=0.10.8,<0.11.0  # Latest 0.10.x with tasks API - improved accuracy
+mediapipe>=0.10.8,<0.11.0  # Latest 0.10.x with tasks API - using lite model for speed
+ultralytics>=8.0.0  # YOLO-Pose for fast, robust fallback detection
 aiohttp>=3.9.0
 scipy>=1.11.0  # Advanced signal processing: Savitzky-Golay, spline, statistical analysis
 filterpy>=1.4.5  # Kalman filtering for smooth, accurate trajectory tracking
