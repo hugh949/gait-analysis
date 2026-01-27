@@ -191,8 +191,8 @@ async def upload_video(
     reference_length_mm: Optional[float] = Query(None, gt=0, le=10000, description="Reference length in mm"),
     fps: float = Query(30.0, gt=0, le=120, description="Video frames per second"),
     processing_fps: Optional[float] = Query(None, gt=0, le=60, description="Processing frame rate (frames per second to process). Lower = faster analysis, higher = more accurate. Default: auto-detect based on video length."),
-    request: Request = None,
-    background_tasks: BackgroundTasks = None
+    request: Request,
+    background_tasks: BackgroundTasks
 ) -> JSONResponse:
     """
     Upload video for gait analysis using Azure native services
@@ -244,8 +244,10 @@ async def upload_video(
         
         # Log estimated file size from Content-Length header if available
         content_length = None
-        if request:
+        try:
             content_length = request.headers.get("content-length")
+        except (AttributeError, TypeError):
+            pass  # Request might not be available in some edge cases
         if content_length:
             try:
                 estimated_size_mb = int(content_length) / (1024 * 1024)

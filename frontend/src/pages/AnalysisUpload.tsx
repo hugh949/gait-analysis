@@ -127,8 +127,8 @@ export default function AnalysisUpload() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('view_type', 'front')
-      // Frame rate is auto-detected by backend (optimized to 6 fps for gait analysis)
+      // Note: view_type, fps, etc. are sent as query parameters, not FormData
+      // Backend expects them as Query() parameters, not form fields
 
       console.log('Creating XHR request...')
       const xhr = new XMLHttpRequest()
@@ -181,7 +181,44 @@ export default function AnalysisUpload() {
             let errorMessage = `Upload failed: ${xhr.status} ${xhr.statusText}`
             
             // Handle specific HTTP status codes with helpful messages
-            if (xhr.status === 502) {
+            if (xhr.status === 400) {
+              // 400 Bad Request - usually means parsing error or validation error
+              let details = ''
+              try {
+                const response = JSON.parse(xhr.responseText)
+                if (response.detail) {
+                  if (typeof response.detail === 'string') {
+                    details = `\n\nError: ${response.detail}`
+                  } else if (response.detail.message) {
+                    details = `\n\nError: ${response.detail.message}`
+                  } else if (Array.isArray(response.detail)) {
+                    // FastAPI validation errors
+                    const validationErrors = response.detail.map((err: any) => 
+                      `${err.loc?.join('.') || 'field'}: ${err.msg || 'validation error'}`
+                    ).join('\n')
+                    details = `\n\nValidation errors:\n${validationErrors}`
+                  }
+                } else if (response.message) {
+                  details = `\n\nError: ${response.message}`
+                }
+              } catch (e) {
+                // Response not JSON, use raw text if available
+                if (xhr.responseText && xhr.responseText.length > 0 && xhr.responseText.length < 500) {
+                  details = `\n\nError details: ${xhr.responseText}`
+                }
+              }
+              
+              errorMessage = `Upload failed: Bad Request (400)${details}\n\n` +
+                `This usually means:\n\n` +
+                `• Invalid file format (use MP4, AVI, MOV, or MKV)\n` +
+                `• File is corrupted or empty\n` +
+                `• Request format issue\n\n` +
+                `Please try:\n` +
+                `1. Check file format (MP4 recommended)\n` +
+                `2. Try a different video file\n` +
+                `3. Ensure file is not corrupted\n` +
+                `4. Refresh the page and try again`
+            } else if (xhr.status === 502) {
               // Try to extract more details from response
               let details = ''
               try {
@@ -321,15 +358,20 @@ export default function AnalysisUpload() {
           reject(new Error('Upload was cancelled'))
         }
 
-        // Construct the full URL
-        const uploadUrl = API_URL === '' 
+        // Construct the full URL with query parameters
+        // Backend expects view_type, fps, etc. as query parameters, not FormData
+        const baseUrl = API_URL === '' 
           ? '/api/v1/analysis/upload'  // Relative URL
           : `${API_URL}/api/v1/analysis/upload`  // Absolute URL
+        
+        // Add query parameters (backend expects these as Query(), not FormData)
+        const uploadUrl = `${baseUrl}?view_type=front&fps=30.0`
         
         console.log('Opening XHR connection to:', uploadUrl)
         console.log('API_URL:', API_URL, '(empty = relative, non-empty = absolute)')
         console.log('Window origin:', window.location.origin)
         console.log('Full URL will be:', API_URL === '' ? `${window.location.origin}${uploadUrl}` : uploadUrl)
+        console.log('FormData entries:', Array.from(formData.entries()).map(([k, v]) => [k, v instanceof File ? `File: ${v.name}` : v]))
         
         xhr.open('POST', uploadUrl)
         xhr.timeout = 600000 // 10 minutes
